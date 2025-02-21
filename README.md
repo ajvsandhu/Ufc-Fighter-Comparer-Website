@@ -1,3 +1,3 @@
-# Ufc Fighter Data Collecter and API
+# UFC Fighter Data Collecter and API
 This is a project I created with my friend to practice collecting data from a website and storing it in an SQL database. I also built an API to get data from the database for further use. Collected every fighter's data from http://ufcstats.com/statistics/fighters by building a scrapper, from their career averages to data from their last 5 fights. The SQL database is located in the
 Api Folder. Currently working to use the scrapper and API to create a website that compares the stats of two fighters selected by a user by showing tables and graphs, COMING SOON!!!
