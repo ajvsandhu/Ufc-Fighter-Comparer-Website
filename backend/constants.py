@@ -77,7 +77,3 @@ LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True) 
-
-
-
-#testing
