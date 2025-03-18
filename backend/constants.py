@@ -46,7 +46,7 @@ UNRANKED_VALUE = 99  # Value used to indicate unranked fighters
 DEFAULT_RECORD = "N/A"  # Default value for missing fight records
 
 # Cache Configuration
-CACHE_TIMEOUT = 3600  # 1 hour in seconds
+CACHE_TIMEOUT = 3600  # 1 hour in seconds 
 RANKINGS_CACHE_TIMEOUT = 86400  # 24 hours in seconds
 
 # Model Configuration
