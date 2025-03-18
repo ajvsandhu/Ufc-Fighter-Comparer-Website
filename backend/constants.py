@@ -46,7 +46,7 @@ UNRANKED_VALUE = 99  # Value used to indicate unranked fighters
 DEFAULT_RECORD = "N/A"  # Default value for missing fight records
 
 # Cache Configuration
-CACHE_TIMEOUT = 3600  # 1 hour in seconds
+CACHE_TIMEOUT = 3600  # 1 hour in seconds 
 RANKINGS_CACHE_TIMEOUT = 86400  # 24 hours in seconds
 
 # Model Configuration
@@ -77,7 +77,3 @@ LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True) 
-
-
-
-#testing
