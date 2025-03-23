@@ -1,0 +1,1043 @@
+{
+  "timestamp": "2025-03-15T16:42:54.914493",
+  "rankings": {
+    "flyweight alexandre pantoja": {
+      "original_name": "Flyweight Alexandre Pantoja",
+      "numeric_rank": 1,
+      "division_weight": "125",
+      "is_champion": true
+    },
+    "brandon royval": {
+      "original_name": "Brandon Royval",
+      "numeric_rank": 2,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "brandon moreno": {
+      "original_name": "Brandon Moreno",
+      "numeric_rank": 3,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "amir albazi": {
+      "original_name": "Amir Albazi",
+      "numeric_rank": 4,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "kai karafrance": {
+      "original_name": "Kai Kara-France",
+      "numeric_rank": 5,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "tatsuro taira": {
+      "original_name": "Tatsuro Taira",
+      "numeric_rank": 6,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "manel kape": {
+      "original_name": "Manel Kape",
+      "numeric_rank": 7,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "alex perez": {
+      "original_name": "Alex Perez",
+      "numeric_rank": 8,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "steve erceg": {
+      "original_name": "Steve Erceg",
+      "numeric_rank": 9,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "asu almabayev": {
+      "original_name": "Asu Almabayev",
+      "numeric_rank": 10,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "tim elliott": {
+      "original_name": "Tim Elliott",
+      "numeric_rank": 11,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "tagir ulanbekov": {
+      "original_name": "Tagir Ulanbekov",
+      "numeric_rank": 12,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "bruno silva": {
+      "original_name": "Bruno Silva",
+      "numeric_rank": 13,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "ramazan temirov": {
+      "original_name": "Ramazan Temirov",
+      "numeric_rank": 14,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "kai asakura": {
+      "original_name": "Kai Asakura",
+      "numeric_rank": 15,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "charles johnson": {
+      "original_name": "Charles Johnson",
+      "numeric_rank": 16,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "bantamweight merab dvalishvili": {
+      "original_name": "Bantamweight Merab Dvalishvili",
+      "numeric_rank": 1,
+      "division_weight": "135",
+      "is_champion": true
+    },
+    "sean omalley": {
+      "original_name": "Sean O'Malley",
+      "numeric_rank": 2,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "petr yan": {
+      "original_name": "Petr Yan",
+      "numeric_rank": 3,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "umar nurmagomedov": {
+      "original_name": "Umar Nurmagomedov",
+      "numeric_rank": 4,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "cory sandhagen": {
+      "original_name": "Cory Sandhagen",
+      "numeric_rank": 5,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "deiveson figueiredo": {
+      "original_name": "Deiveson Figueiredo",
+      "numeric_rank": 6,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "song yadong": {
+      "original_name": "Song Yadong",
+      "numeric_rank": 7,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "marlon vera": {
+      "original_name": "Marlon Vera",
+      "numeric_rank": 8,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "rob font": {
+      "original_name": "Rob Font",
+      "numeric_rank": 9,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "henry cejudo": {
+      "original_name": "Henry Cejudo",
+      "numeric_rank": 10,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "mario bautista": {
+      "original_name": "Mario Bautista",
+      "numeric_rank": 11,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "jose aldo": {
+      "original_name": "Jos\u00e9 Aldo",
+      "numeric_rank": 12,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "kyler phillips": {
+      "original_name": "Kyler Phillips",
+      "numeric_rank": 13,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "marcus mcghee": {
+      "original_name": "Marcus McGhee",
+      "numeric_rank": 14,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "aiemann zahabi": {
+      "original_name": "Aiemann Zahabi",
+      "numeric_rank": 15,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "montel jackson": {
+      "original_name": "Montel Jackson",
+      "numeric_rank": 16,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "featherweight ilia topuria": {
+      "original_name": "Featherweight Ilia Topuria",
+      "numeric_rank": 1,
+      "division_weight": "145",
+      "is_champion": true
+    },
+    "alexander volkanovski": {
+      "original_name": "Alexander Volkanovski",
+      "numeric_rank": 2,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "max holloway": {
+      "original_name": "Max Holloway",
+      "numeric_rank": 3,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "diego lopes": {
+      "original_name": "Diego Lopes",
+      "numeric_rank": 4,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "movsar evloev": {
+      "original_name": "Movsar Evloev",
+      "numeric_rank": 5,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "yair rodriguez": {
+      "original_name": "Yair Rodriguez",
+      "numeric_rank": 6,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "brian ortega": {
+      "original_name": "Brian Ortega",
+      "numeric_rank": 7,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "arnold allen": {
+      "original_name": "Arnold Allen",
+      "numeric_rank": 8,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "josh emmett": {
+      "original_name": "Josh Emmett",
+      "numeric_rank": 9,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "aljamain sterling": {
+      "original_name": "Aljamain Sterling",
+      "numeric_rank": 10,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "lerone murphy": {
+      "original_name": "Lerone Murphy",
+      "numeric_rank": 11,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "giga chikadze": {
+      "original_name": "Giga Chikadze",
+      "numeric_rank": 12,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "youssef zalal": {
+      "original_name": "Youssef Zalal",
+      "numeric_rank": 13,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "bryce mitchell": {
+      "original_name": "Bryce Mitchell",
+      "numeric_rank": 14,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "calvin kattar": {
+      "original_name": "Calvin Kattar",
+      "numeric_rank": 15,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "dan ige": {
+      "original_name": "Dan Ige",
+      "numeric_rank": 16,
+      "division_weight": "145",
+      "is_champion": false
+    },
+    "lightweight islam makhachev": {
+      "original_name": "Lightweight Islam Makhachev",
+      "numeric_rank": 1,
+      "division_weight": "155",
+      "is_champion": true
+    },
+    "arman tsarukyan": {
+      "original_name": "Arman Tsarukyan",
+      "numeric_rank": 2,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "charles oliveira": {
+      "original_name": "Charles Oliveira",
+      "numeric_rank": 3,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "justin gaethje": {
+      "original_name": "Justin Gaethje",
+      "numeric_rank": 4,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "dustin poirier": {
+      "original_name": "Dustin Poirier",
+      "numeric_rank": 5,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "dan hooker": {
+      "original_name": "Dan Hooker",
+      "numeric_rank": 7,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "michael chandler": {
+      "original_name": "Michael Chandler",
+      "numeric_rank": 8,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "mateusz gamrot": {
+      "original_name": "Mateusz Gamrot",
+      "numeric_rank": 9,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "beneil dariush": {
+      "original_name": "Beneil Dariush",
+      "numeric_rank": 10,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "renato moicano": {
+      "original_name": "Renato Moicano",
+      "numeric_rank": 11,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "rafael fiziev": {
+      "original_name": "Rafael Fiziev",
+      "numeric_rank": 12,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "paddy pimblett": {
+      "original_name": "Paddy Pimblett",
+      "numeric_rank": 13,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "benoit saint denis rank": {
+      "original_name": "Beno\u00eet Saint Denis Rank",
+      "numeric_rank": 14,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "grant dawson": {
+      "original_name": "Grant Dawson",
+      "numeric_rank": 15,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "ignacio bahamondes": {
+      "original_name": "Ignacio Bahamondes",
+      "numeric_rank": 16,
+      "division_weight": "155",
+      "is_champion": false
+    },
+    "welterweight belal muhammad": {
+      "original_name": "Welterweight Belal Muhammad",
+      "numeric_rank": 1,
+      "division_weight": "170",
+      "is_champion": true
+    },
+    "leon edwards": {
+      "original_name": "Leon Edwards",
+      "numeric_rank": 2,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "shavkat rakhmonov": {
+      "original_name": "Shavkat Rakhmonov",
+      "numeric_rank": 3,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "kamaru usman": {
+      "original_name": "Kamaru Usman",
+      "numeric_rank": 4,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "jack della maddalena": {
+      "original_name": "Jack Della Maddalena",
+      "numeric_rank": 5,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "sean brady": {
+      "original_name": "Sean Brady",
+      "numeric_rank": 6,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "joaquin buckley": {
+      "original_name": "Joaquin Buckley",
+      "numeric_rank": 7,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "ian machado garry": {
+      "original_name": "Ian Machado Garry",
+      "numeric_rank": 8,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "gilbert burns": {
+      "original_name": "Gilbert Burns",
+      "numeric_rank": 9,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "colby covington": {
+      "original_name": "Colby Covington",
+      "numeric_rank": 10,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "geoff neal": {
+      "original_name": "Geoff Neal",
+      "numeric_rank": 11,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "stephen thompson": {
+      "original_name": "Stephen Thompson",
+      "numeric_rank": 12,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "michael morales": {
+      "original_name": "Michael Morales",
+      "numeric_rank": 13,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "carlos prates": {
+      "original_name": "Carlos Prates",
+      "numeric_rank": 14,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "vicente luque": {
+      "original_name": "Vicente Luque",
+      "numeric_rank": 15,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "michael page": {
+      "original_name": "Michael Page",
+      "numeric_rank": 16,
+      "division_weight": "170",
+      "is_champion": false
+    },
+    "middleweight dricus du plessis": {
+      "original_name": "Middleweight Dricus Du Plessis",
+      "numeric_rank": 1,
+      "division_weight": "185",
+      "is_champion": true
+    },
+    "nassourdine imavov": {
+      "original_name": "Nassourdine Imavov",
+      "numeric_rank": 2,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "sean strickland": {
+      "original_name": "Sean Strickland",
+      "numeric_rank": 3,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "khamzat chimaev": {
+      "original_name": "Khamzat Chimaev",
+      "numeric_rank": 4,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "israel adesanya": {
+      "original_name": "Israel Adesanya",
+      "numeric_rank": 5,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "robert whittaker": {
+      "original_name": "Robert Whittaker",
+      "numeric_rank": 6,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "caio borralho": {
+      "original_name": "Caio Borralho",
+      "numeric_rank": 7,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "jared cannonier": {
+      "original_name": "Jared Cannonier",
+      "numeric_rank": 8,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "marvin vettori": {
+      "original_name": "Marvin Vettori",
+      "numeric_rank": 9,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "anthony hernandez": {
+      "original_name": "Anthony Hernandez",
+      "numeric_rank": 10,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "brendan allen": {
+      "original_name": "Brendan Allen",
+      "numeric_rank": 11,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "paulo costa rank": {
+      "original_name": "Paulo Costa Rank",
+      "numeric_rank": 12,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "roman dolidze rank": {
+      "original_name": "Roman Dolidze Rank",
+      "numeric_rank": 13,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "reinier de ridder rank": {
+      "original_name": "Reinier de Ridder Rank",
+      "numeric_rank": 14,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "michel pereira rank": {
+      "original_name": "Michel Pereira Rank",
+      "numeric_rank": 15,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "roman kopylov rank": {
+      "original_name": "Roman Kopylov Rank",
+      "numeric_rank": 16,
+      "division_weight": "185",
+      "is_champion": false
+    },
+    "light heavyweight magomed ankalaev": {
+      "original_name": "Light Heavyweight Magomed Ankalaev",
+      "numeric_rank": 1,
+      "division_weight": "205",
+      "is_champion": true
+    },
+    "alex pereira rank": {
+      "original_name": "Alex Pereira Rank",
+      "numeric_rank": 2,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "jiri prochazka": {
+      "original_name": "Ji\u0159\u00ed Proch\u00e1zka",
+      "numeric_rank": 3,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "jan bachowicz": {
+      "original_name": "Jan B\u0142achowicz",
+      "numeric_rank": 4,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "jamahal hill": {
+      "original_name": "Jamahal Hill",
+      "numeric_rank": 5,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "aleksandar rakic": {
+      "original_name": "Aleksandar Raki\u0107",
+      "numeric_rank": 6,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "carlos ulberg": {
+      "original_name": "Carlos Ulberg",
+      "numeric_rank": 7,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "khalil rountree": {
+      "original_name": "Khalil Rountree Jr.",
+      "numeric_rank": 8,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "nikita krylov": {
+      "original_name": "Nikita Krylov",
+      "numeric_rank": 9,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "volkan oezdemir": {
+      "original_name": "Volkan Oezdemir",
+      "numeric_rank": 10,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "johnny walker": {
+      "original_name": "Johnny Walker",
+      "numeric_rank": 11,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "dominick reyes": {
+      "original_name": "Dominick Reyes",
+      "numeric_rank": 12,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "azamat murzakanov": {
+      "original_name": "Azamat Murzakanov",
+      "numeric_rank": 13,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "bogdan guskov": {
+      "original_name": "Bogdan Guskov",
+      "numeric_rank": 14,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "alonzo menifield": {
+      "original_name": "Alonzo Menifield",
+      "numeric_rank": 15,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "anthony smith": {
+      "original_name": "Anthony Smith",
+      "numeric_rank": 16,
+      "division_weight": "205",
+      "is_champion": false
+    },
+    "heavyweight jon jones": {
+      "original_name": "Heavyweight Jon Jones",
+      "numeric_rank": 1,
+      "division_weight": "265",
+      "is_champion": true
+    },
+    "tom aspinall interim": {
+      "original_name": "Tom Aspinall interim",
+      "numeric_rank": 2,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "ciryl gane": {
+      "original_name": "Ciryl Gane",
+      "numeric_rank": 3,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "alexander volkov": {
+      "original_name": "Alexander Volkov",
+      "numeric_rank": 4,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "sergei pavlovich": {
+      "original_name": "Sergei Pavlovich",
+      "numeric_rank": 5,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "curtis blaydes": {
+      "original_name": "Curtis Blaydes",
+      "numeric_rank": 6,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "jailton almeida": {
+      "original_name": "Jailton Almeida",
+      "numeric_rank": 7,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "serghei spivac": {
+      "original_name": "Serghei Spivac",
+      "numeric_rank": 8,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "marcin tybura": {
+      "original_name": "Marcin Tybura",
+      "numeric_rank": 9,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "derrick lewis": {
+      "original_name": "Derrick Lewis",
+      "numeric_rank": 10,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "tai tuivasa": {
+      "original_name": "Tai Tuivasa",
+      "numeric_rank": 11,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "shamil gaziev": {
+      "original_name": "Shamil Gaziev",
+      "numeric_rank": 12,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "waldo cortes acosta": {
+      "original_name": "Waldo Cortes Acosta",
+      "numeric_rank": 13,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "mick parkin": {
+      "original_name": "Mick Parkin",
+      "numeric_rank": 14,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "tallison teixeira rank": {
+      "original_name": "Tallison Teixeira Rank",
+      "numeric_rank": 15,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "kennedy nzechukwu rank": {
+      "original_name": "Kennedy Nzechukwu Rank",
+      "numeric_rank": 16,
+      "division_weight": "265",
+      "is_champion": false
+    },
+    "womens strawweight zhang weili": {
+      "original_name": "Women's Strawweight Zhang Weili",
+      "numeric_rank": 1,
+      "division_weight": "115",
+      "is_champion": true
+    },
+    "yan xiaonan": {
+      "original_name": "Yan Xiaonan",
+      "numeric_rank": 2,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "tatiana suarez": {
+      "original_name": "Tatiana Suarez",
+      "numeric_rank": 3,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "virna jandiroba": {
+      "original_name": "Virna Jandiroba",
+      "numeric_rank": 4,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "jessica andrade": {
+      "original_name": "J\u00e9ssica Andrade",
+      "numeric_rank": 5,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "amanda lemos": {
+      "original_name": "Amanda Lemos",
+      "numeric_rank": 6,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "mackenzie dern": {
+      "original_name": "Mackenzie Dern",
+      "numeric_rank": 7,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "amanda ribas rank": {
+      "original_name": "Amanda Ribas Rank",
+      "numeric_rank": 8,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "iasmin lucindo rank": {
+      "original_name": "Iasmin Lucindo Rank",
+      "numeric_rank": 9,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "marina rodriguez": {
+      "original_name": "Marina Rodriguez",
+      "numeric_rank": 10,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "tabatha ricci": {
+      "original_name": "Tabatha Ricci",
+      "numeric_rank": 11,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "loopy godinez": {
+      "original_name": "Loopy Godinez",
+      "numeric_rank": 12,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "gillian robertson": {
+      "original_name": "Gillian Robertson",
+      "numeric_rank": 13,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "angela hill": {
+      "original_name": "Angela Hill",
+      "numeric_rank": 14,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "luana pinheiro": {
+      "original_name": "Luana Pinheiro",
+      "numeric_rank": 15,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "tecia pennington": {
+      "original_name": "Tecia Pennington",
+      "numeric_rank": 16,
+      "division_weight": "115",
+      "is_champion": false
+    },
+    "womens flyweight valentina shevchenko": {
+      "original_name": "Women's Flyweight Valentina Shevchenko",
+      "numeric_rank": 1,
+      "division_weight": "125",
+      "is_champion": true
+    },
+    "alexa grasso": {
+      "original_name": "Alexa Grasso",
+      "numeric_rank": 2,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "manon fiorot": {
+      "original_name": "Manon Fiorot",
+      "numeric_rank": 3,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "erin blanchfield": {
+      "original_name": "Erin Blanchfield",
+      "numeric_rank": 4,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "maycee barber": {
+      "original_name": "Maycee Barber",
+      "numeric_rank": 5,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "natalia silva": {
+      "original_name": "Natalia Silva",
+      "numeric_rank": 6,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "rose namajunas": {
+      "original_name": "Rose Namajunas",
+      "numeric_rank": 7,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "viviane araujo": {
+      "original_name": "Viviane Ara\u00fajo",
+      "numeric_rank": 9,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "jasmine jasudavicius": {
+      "original_name": "Jasmine Jasudavicius",
+      "numeric_rank": 10,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "tracy cortez": {
+      "original_name": "Tracy Cortez",
+      "numeric_rank": 11,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "karine silva": {
+      "original_name": "Karine Silva",
+      "numeric_rank": 12,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "miranda maverick rank": {
+      "original_name": "Miranda Maverick Rank",
+      "numeric_rank": 13,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "ariane da silva rank": {
+      "original_name": "Ariane da Silva Rank",
+      "numeric_rank": 14,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "casey oneill": {
+      "original_name": "Casey O'Neill",
+      "numeric_rank": 15,
+      "division_weight": "125",
+      "is_champion": false
+    },
+    "mayra bueno silva": {
+      "original_name": "Mayra Bueno Silva",
+      "numeric_rank": 8,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "womens bantamweight julianna pena": {
+      "original_name": "Women's Bantamweight Julianna Pe\u00f1a",
+      "numeric_rank": 1,
+      "division_weight": "135",
+      "is_champion": true
+    },
+    "raquel pennington": {
+      "original_name": "Raquel Pennington",
+      "numeric_rank": 2,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "kayla harrison": {
+      "original_name": "Kayla Harrison",
+      "numeric_rank": 3,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "ketlen vieira": {
+      "original_name": "Ketlen Vieira",
+      "numeric_rank": 4,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "norma dumont": {
+      "original_name": "Norma Dumont",
+      "numeric_rank": 5,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "macy chiasson": {
+      "original_name": "Macy Chiasson",
+      "numeric_rank": 6,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "irene aldana": {
+      "original_name": "Irene Aldana",
+      "numeric_rank": 7,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "ailin perez": {
+      "original_name": "Ailin Perez",
+      "numeric_rank": 9,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "karol rosa": {
+      "original_name": "Karol Rosa",
+      "numeric_rank": 10,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "yana santos": {
+      "original_name": "Yana Santos",
+      "numeric_rank": 11,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "miesha tate": {
+      "original_name": "Miesha Tate",
+      "numeric_rank": 12,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "jacqueline cavalcanti": {
+      "original_name": "Jacqueline Cavalcanti",
+      "numeric_rank": 13,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "nora cornolle": {
+      "original_name": "Nora Cornolle",
+      "numeric_rank": 14,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "chelsea chandler": {
+      "original_name": "Chelsea Chandler",
+      "numeric_rank": 15,
+      "division_weight": "135",
+      "is_champion": false
+    },
+    "joselyne edwards": {
+      "original_name": "Joselyne Edwards",
+      "numeric_rank": 16,
+      "division_weight": "135",
+      "is_champion": false
+    }
+  }
+}
