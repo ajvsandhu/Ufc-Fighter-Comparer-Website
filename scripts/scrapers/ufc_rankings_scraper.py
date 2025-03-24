@@ -228,13 +228,6 @@ def fetch_ufc_rankings():
         page_title = soup.title.text if soup.title else 'No title'
         print(f"Page title: {page_title}")
         
-        # Save the HTML for debugging (only when directly running the script)
-        if __name__ == "__main__":
-            debug_file = os.path.join(DATA_DIR, "ufc_rankings_debug.html")
-            with open(debug_file, "w", encoding="utf-8") as f:
-                f.write(response.text)
-            print(f"Saved HTML to {debug_file} for debugging")
-        
         # Dictionary to store fighter rankings by name
         fighter_rankings = {}
         
