@@ -1,0 +1,67 @@
+{
+    "model_type": "GradientBoosting",
+    "n_estimators": 200,
+    "max_depth": 12,
+    "random_state": 42,
+    "learning_rate": 0.05,
+    "feature_weights": {
+        "striking": 1.1,
+        "grappling": 1.1,
+        "recent_fights": 1.6,
+        "head_to_head": 2.2,
+        "physical": 0.8,
+        "quality": 1.5,
+        "style": 1.3,
+        "versatility": 1.2,
+        "experience": 0.7
+    },
+    "confidence_calculation": {
+        "use_data_driven_confidence": true,
+        "dynamic_probabilities": true,
+        "statistical_threshold": 0.03,
+        "min_confidence": 0.53,
+        "max_confidence": 0.9,
+        "avoid_fixed_splits": true,
+        "probability_jitter": 0.03,
+        "performance_based_confidence": true
+    },
+    "feature_extraction": {
+        "recent_fight_weight": 2.5,
+        "include_style_matchups": true,
+        "normalize_features": true,
+        "use_advanced_metrics": true,
+        "include_quality_metrics": true,
+        "career_progression_weight": 1.5,
+        "detect_inconsistent_fighters": true,
+        "physical_matchup_importance": 0.8
+    },
+    "matchup_adjustments": {
+        "head_to_head_bonus": 0.15,
+        "streak_factor": 0.04,
+        "champion_bonus": 0.04,
+        "weight_difference_penalty": 0.12,
+        "inconsistency_penalty": 0.05,
+        "inactivity_penalty": 0.03,
+        "style_counters": {
+            "wrestler_vs_striker": 0.07,
+            "bjj_vs_wrestler": 0.04,
+            "striker_vs_brawler": 0.05,
+            "counter_striker_bonus": 0.05
+        }
+    },
+    "probability_calibration": {
+        "enabled": true,
+        "avoid_60_40_split": true,
+        "diversify_close_predictions": true,
+        "uncertain_matchup_threshold": 0.55,
+        "calibration_method": "isotonic",
+        "recalibrate_after_postprocessing": true,
+        "certainty_thresholds": [
+            0.53,
+            0.6,
+            0.7,
+            0.8,
+            0.9
+        ]
+    }
+}
