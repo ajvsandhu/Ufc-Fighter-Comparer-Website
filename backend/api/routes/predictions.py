@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 import logging
 import traceback
-from backend.ml import predictor
+from backend.ml.predictor import FighterPredictor
 from backend.ml.config import get_config, update_config, reset_config
 from backend.ml.feature_engineering import extract_recent_fight_stats, check_head_to_head, find_common_opponents
 from backend.ml.fight_analysis import generate_matchup_analysis
@@ -29,6 +29,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix=f"{API_V1_PREFIX}/prediction")
+
+# Create predictor instance
+predictor = FighterPredictor()
 
 @router.get("/train")
 async def train_model():
