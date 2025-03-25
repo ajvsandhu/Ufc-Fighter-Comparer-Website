@@ -1,11 +1,14 @@
 """
 Enhanced feature engineering for UFC fighter prediction model.
-This module extracts more meaningful features from fighter data. WIP WILL CHANGE
+
+This module provides comprehensive feature extraction and engineering functions
+for the UFC fighter prediction system. It handles various aspects of fighter data
+including physical attributes, fight statistics, and performance metrics.
 """
 
 import logging
 import re
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any, Tuple, Optional, Union
 from datetime import datetime
 
 # Set up logging
@@ -13,7 +16,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def safe_convert_to_float(value: Any, default: float = 0.0) -> float:
-    """Safely convert a value to float, handling various formats and errors"""
+    """
+    Safely convert a value to float, handling various formats and errors.
+    
+    Args:
+        value: The value to convert
+        default: Default value to return if conversion fails
+        
+    Returns:
+        float: The converted float value or default if conversion fails
+    """
     if value is None:
         return default
     
@@ -32,7 +44,15 @@ def safe_convert_to_float(value: Any, default: float = 0.0) -> float:
         return default
 
 def extract_record_stats(record: str) -> Tuple[int, int, int]:
-    """Extract wins, losses, and draws from record string (e.g. "21-3-0")"""
+    """
+    Extract wins, losses, and draws from record string.
+    
+    Args:
+        record: Record string in format "W-L-D" (e.g. "21-3-0")
+        
+    Returns:
+        Tuple[int, int, int]: Tuple containing (wins, losses, draws)
+    """
     if not isinstance(record, str):
         return 0, 0, 0
     
@@ -53,14 +73,30 @@ def extract_record_stats(record: str) -> Tuple[int, int, int]:
     return wins, losses, draws
 
 def calculate_win_percentage(record: str) -> float:
-    """Calculate win percentage from record string"""
+    """
+    Calculate win percentage from record string.
+    
+    Args:
+        record: Record string in format "W-L-D"
+        
+    Returns:
+        float: Win percentage as a float between 0 and 100
+    """
     wins, losses, draws = extract_record_stats(record)
     if wins + losses + draws > 0:
         return (wins / (wins + losses + draws)) * 100
     return 0
 
 def extract_height_in_inches(height_str: str) -> float:
-    """Convert height string (e.g. "5'11\"") to inches"""
+    """
+    Convert height string to inches.
+    
+    Args:
+        height_str: Height string in format "X'Y\"" (e.g. "5'11\"")
+        
+    Returns:
+        float: Height in inches, or 0 if parsing fails
+    """
     try:
         # Match feet and inches pattern (e.g., "5'11\"")
         height_parts = re.match(r"(\d+)'(\d+)\"", height_str)
@@ -75,7 +111,15 @@ def extract_height_in_inches(height_str: str) -> float:
         return 0
 
 def extract_reach_in_inches(reach_str: str) -> float:
-    """Extract reach value in inches from string (e.g. "72\"")"""
+    """
+    Extract reach value in inches from string.
+    
+    Args:
+        reach_str: Reach string (e.g. "72\"")
+        
+    Returns:
+        float: Reach in inches, or 0 if parsing fails
+    """
     try:
         # Find digits in the reach string
         reach_digits = re.search(r'(\d+)', reach_str)
@@ -88,7 +132,15 @@ def extract_reach_in_inches(reach_str: str) -> float:
         return 0
 
 def extract_strikes_landed_attempted(strike_str: str) -> Tuple[int, int]:
-    """Extract landed and attempted strikes from string (e.g. "45 of 127")"""
+    """
+    Extract landed and attempted strikes from string.
+    
+    Args:
+        strike_str: Strike string in format "X of Y"
+        
+    Returns:
+        Tuple[int, int]: Tuple containing (landed strikes, attempted strikes)
+    """
     try:
         if not isinstance(strike_str, str):
             return 0, 0
@@ -101,15 +153,25 @@ def extract_strikes_landed_attempted(strike_str: str) -> Tuple[int, int]:
     except Exception:
         return 0, 0
 
-def extract_advanced_fighter_profile(fighter_data: Dict[str, Any], all_fights: List[Dict[str, Any]] = None) -> Dict[str, float]:
+def extract_advanced_fighter_profile(
+    fighter_data: Dict[str, Any],
+    all_fights: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, float]:
     """
-    Extract comprehensive fighter profile with career progression metrics
+    Extract comprehensive fighter profile with career progression metrics.
     
-    This includes:
+    This function calculates various advanced metrics including:
     - Career trajectory (improvement/decline metrics)
     - Physical attributes relative to weight class
     - Fight frequency and activity level
     - Overall versatility scores
+    
+    Args:
+        fighter_data: Dictionary containing basic fighter information
+        all_fights: Optional list of all fights for career progression analysis
+        
+    Returns:
+        Dict[str, float]: Dictionary of calculated metrics and scores
     """
     profile = {}
     
