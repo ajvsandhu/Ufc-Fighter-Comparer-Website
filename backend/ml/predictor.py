@@ -1,3 +1,11 @@
+"""
+UFC Fighter Prediction System using Machine Learning.
+
+This module implements a machine learning-based system for predicting UFC fight outcomes.
+It uses various features including fighter statistics, recent performance, and physical attributes
+to generate predictions with confidence levels.
+"""
+
 import os
 import json
 import pickle
@@ -5,6 +13,7 @@ import logging
 import math
 import numpy as np
 from datetime import datetime
+from typing import Dict, List, Any, Optional, Tuple, Union
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
@@ -86,15 +95,32 @@ def calculate_confidence_level(probability):
 
 class FighterPredictor:
     """
-    Predicts UFC fight outcomes using machine learning
+    A class for predicting UFC fight outcomes using machine learning.
+    
+    This class handles model training, prediction, and feature engineering for UFC fighter
+    predictions. It uses various statistical and machine learning techniques to generate
+    predictions with confidence levels.
+    
+    Attributes:
+        model: The trained machine learning model
+        scaler: StandardScaler for feature normalization
+        feature_names: List of feature names used in the model
+        model_info: Dictionary containing model metadata and performance metrics
+        config: Configuration dictionary for model parameters
+        logger: Logger instance for the class
     """
     
-    def __init__(self):
-        """Initialize the predictor with default settings"""
-        self.model = None
-        self.scaler = None
-        self.feature_names = None
-        self.model_info = {
+    def __init__(self) -> None:
+        """
+        Initialize the predictor with default settings.
+        
+        Sets up the model, scaler, and configuration. Attempts to load an existing
+        trained model if available.
+        """
+        self.model: Optional[Union[RandomForestClassifier, GradientBoostingClassifier]] = None
+        self.scaler: Optional[StandardScaler] = None
+        self.feature_names: Optional[List[str]] = None
+        self.model_info: Dict[str, Any] = {
             'last_trained': None,
             'version': MODEL_VERSION,
             'accuracy': None,
@@ -102,8 +128,8 @@ class FighterPredictor:
             'status': 'Not trained',
             'message': 'Model not yet trained'
         }
-        self.config = get_config()
-        self.logger = logging.getLogger(__name__)
+        self.config: Dict[str, Any] = get_config()
+        self.logger: logging.Logger = logging.getLogger(__name__)
         
         # Try to load an existing model if available
         self._load_model()
@@ -112,8 +138,16 @@ class FighterPredictor:
         if self.model_info and 'version' in self.model_info:
             self.model_info['version'] = MODEL_VERSION
 
-    def _load_model(self):
-        """Load the trained model with better error handling"""
+    def _load_model(self) -> bool:
+        """
+        Load the trained model with better error handling.
+        
+        Attempts to load the model from disk, handling different format versions
+        and potential errors.
+        
+        Returns:
+            bool: True if model was successfully loaded, False otherwise
+        """
         if os.path.exists(MODEL_PATH):
             try:
                 with open(MODEL_PATH, 'rb') as f:
@@ -179,8 +213,15 @@ class FighterPredictor:
             logger.info(f"No model file found at {MODEL_PATH}")
         return False
     
-    def _save_model(self):
-        """Save the trained model to disk"""
+    def _save_model(self) -> bool:
+        """
+        Save the trained model to disk.
+        
+        Saves the model, scaler, feature names, and model info to disk.
+        
+        Returns:
+            bool: True if model was successfully saved, False otherwise
+        """
         if not self.model:
             self.logger.error("Cannot save model - no model is loaded")
             return False
@@ -210,8 +251,13 @@ class FighterPredictor:
             self.logger.error(traceback.format_exc())
             return False
     
-    def _get_db_connection(self):
-        """Get a connection to the SQLite database."""
+    def _get_db_connection(self) -> Optional[sqlite3.Connection]:
+        """
+        Get a connection to the SQLite database.
+        
+        Returns:
+            Optional[sqlite3.Connection]: Database connection if successful, None otherwise
+        """
         try:
             if not os.path.exists(DB_PATH):
                 self.logger.error(f"Database file not found at: {DB_PATH}")
@@ -223,9 +269,15 @@ class FighterPredictor:
             self.logger.error(f"Database connection error: {str(e)}")
             return None
     
-    def _get_fighter_data(self, fighter_name):
+    def _get_fighter_data(self, fighter_name: str) -> Optional[Dict[str, Any]]:
         """
-        Get fighter data from database by name
+        Get fighter data from database by name.
+        
+        Args:
+            fighter_name: Name of the fighter to retrieve data for
+            
+        Returns:
+            Optional[Dict[str, Any]]: Fighter data if found, None otherwise
         """
         try:
             conn = get_db_connection()
