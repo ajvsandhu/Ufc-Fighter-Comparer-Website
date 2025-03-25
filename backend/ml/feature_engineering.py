@@ -329,7 +329,30 @@ def extract_advanced_fighter_profile(
         }
 
 def extract_recent_fight_stats(last_5_fights: List[Dict[str, Any]]) -> Dict[str, float]:
-    """Extract statistics from a fighter's last 5 fights"""
+    """
+    Extract statistics from a fighter's last 5 fights.
+
+    This function processes recent fight data to calculate various performance metrics
+    including win percentage, striking stats, takedown stats, and finish rates.
+
+    Args:
+        last_5_fights: List of dictionaries containing fight data for the last 5 fights
+
+    Returns:
+        Dict[str, float]: Dictionary containing calculated statistics including:
+            - recent_win_pct: Recent win percentage
+            - recent_kd_avg: Average knockdowns per fight
+            - recent_sig_str_avg: Average significant strikes landed per fight
+            - recent_td_avg: Average takedowns per fight
+            - recent_sub_attempts: Average submission attempts per fight
+            - recent_ctrl_time_avg: Average control time per fight
+            - finish_rate: Percentage of wins by finish
+            - ko_rate: Percentage of wins by KO/TKO
+            - sub_rate: Percentage of wins by submission
+            - decision_rate: Percentage of wins by decision
+            - winning_streak: Current winning streak
+            - losing_streak: Current losing streak
+    """
     if not last_5_fights or len(last_5_fights) == 0:
         return {
             'recent_win_pct': 0,

@@ -19,6 +19,31 @@ from backend.constants import (
     MODEL_VERSION
 )
 
+# Configuration Constants
+MODEL_TYPES = {
+    'GRADIENT_BOOSTING': 'GradientBoosting',
+    'RANDOM_FOREST': 'RandomForest'
+}
+
+CONFIDENCE_LEVELS = {
+    'MIN': 0.53,
+    'LOW': 0.60,
+    'MODERATE': 0.70,
+    'HIGH': 0.80,
+    'MAX': 0.90
+}
+
+WEIGHT_CLASSES = {
+    'FLYWEIGHT': 125,
+    'BANTAMWEIGHT': 135,
+    'FEATHERWEIGHT': 145,
+    'LIGHTWEIGHT': 155,
+    'WELTERWEIGHT': 170,
+    'MIDDLEWEIGHT': 185,
+    'LIGHT_HEAVYWEIGHT': 205,
+    'HEAVYWEIGHT': 240
+}
+
 # Set up logging
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
@@ -30,35 +55,35 @@ logger = logging.getLogger(__name__)
 # Default configuration
 DEFAULT_CONFIG = {
     # Model type and parameters
-    "model_type": "GradientBoosting",  # Changed from RandomForest for better probability calibration
-    "n_estimators": 200,               # Increased from 150 for better performance
-    "max_depth": 12,                   # Set a reasonable max depth to prevent overfitting
+    "model_type": MODEL_TYPES['GRADIENT_BOOSTING'],
+    "n_estimators": 200,
+    "max_depth": 12,
     "random_state": 42,
-    "learning_rate": 0.05,             # Lower learning rate for more diverse probabilities
+    "learning_rate": 0.05,
     
     # Feature importance weighting
     "feature_weights": {
-        "striking": 1.1,        # Striking features
-        "grappling": 1.1,       # Grappling/wrestling features  
-        "recent_fights": 1.6,   # Recent fight performance (increased weight)
-        "head_to_head": 2.2,    # Weight for direct matchup history
-        "physical": 0.8,        # Physical attributes
-        "quality": 1.5,         # Opponent quality metrics (new)
-        "style": 1.3,           # Fighting style (new)
-        "versatility": 1.2,     # Overall versatility (new)
-        "experience": 0.7       # Career experience
+        "striking": 1.1,
+        "grappling": 1.1,
+        "recent_fights": 1.6,
+        "head_to_head": 2.2,
+        "physical": 0.8,
+        "quality": 1.5,
+        "style": 1.3,
+        "versatility": 1.2,
+        "experience": 0.7
     },
     
     # Confidence calculation settings
     "confidence_calculation": {
-        "use_data_driven_confidence": True,   # Use data-driven approach vs fixed probabilities
-        "dynamic_probabilities": True,        # NEW: Enable dynamic probability calibration
-        "statistical_threshold": 0.03,        # Reduced threshold for statistical significance
-        "min_confidence": 0.53,               # Minimum confidence (avoid 50/50)
-        "max_confidence": 0.90,               # Maximum confidence (avoid 100%)
-        "avoid_fixed_splits": True,           # NEW: Avoid fixed probability splits
-        "probability_jitter": 0.03,           # NEW: Add slight randomness to close predictions
-        "performance_based_confidence": True  # NEW: Scale confidence based on performance metrics
+        "use_data_driven_confidence": True,
+        "dynamic_probabilities": True,
+        "statistical_threshold": 0.03,
+        "min_confidence": CONFIDENCE_LEVELS['MIN'],
+        "max_confidence": CONFIDENCE_LEVELS['MAX'],
+        "avoid_fixed_splits": True,
+        "probability_jitter": 0.03,
+        "performance_based_confidence": True
     },
     
     # Feature extraction parameters

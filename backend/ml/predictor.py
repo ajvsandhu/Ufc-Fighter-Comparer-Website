@@ -278,47 +278,66 @@ class FighterPredictor:
             
         Returns:
             Optional[Dict[str, Any]]: Fighter data if found, None otherwise
+            
+        Raises:
+            sqlite3.Error: If there is a database error
+            ValueError: If fighter_name is empty or invalid
         """
+        if not fighter_name or not isinstance(fighter_name, str):
+            logger.error("Invalid fighter name provided")
+            raise ValueError("Fighter name must be a non-empty string")
+        
         try:
             conn = get_db_connection()
             if not conn:
                 logger.error("No database connection available")
                 return None
-                
+            
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM fighters WHERE fighter_name = ?", (fighter_name,))
-            fighter = cursor.fetchone()
-            
-            if not fighter:
-                logger.warning(f"Fighter not found in database: {fighter_name}")
-                return None
+            try:
+                cursor.execute("SELECT * FROM fighters WHERE fighter_name = ?", (fighter_name,))
+                fighter = cursor.fetchone()
                 
-            # Convert row to dictionary
-            columns = [col[0] for col in cursor.description]
-            fighter_data = dict(zip(columns, fighter))
-            
-            # Get fighter's recent fights
-            cursor.execute("""
-                SELECT * FROM fighter_last_5_fights 
-                WHERE fighter_name = ?
-                ORDER BY fight_date DESC LIMIT 10
-            """, (fighter_name,))
-            
-            fights = cursor.fetchall()
-            if fights:
-                # Convert rows to dictionaries
+                if not fighter:
+                    logger.warning(f"Fighter not found in database: {fighter_name}")
+                    return None
+                
+                # Convert row to dictionary
                 columns = [col[0] for col in cursor.description]
-                fights_data = [dict(zip(columns, fight)) for fight in fights]
-                fighter_data['recent_fights'] = fights_data
+                fighter_data = dict(zip(columns, fighter))
                 
-            cursor.close()
-            return fighter_data
-            
+                # Get fighter's recent fights
+                cursor.execute("""
+                    SELECT * 
+                    FROM fighter_last_5_fights 
+                    WHERE fighter_name = ?
+                    ORDER BY fight_date DESC 
+                    LIMIT 10
+                """, (fighter_name,))
+                
+                fights = cursor.fetchall()
+                if fights:
+                    # Convert rows to dictionaries
+                    columns = [col[0] for col in cursor.description]
+                    fights_data = [dict(zip(columns, fight)) for fight in fights]
+                    fighter_data['recent_fights'] = fights_data
+                
+                return fighter_data
+                
+            except sqlite3.Error as e:
+                logger.error(f"Database error retrieving fighter data: {str(e)}")
+                raise
+            finally:
+                cursor.close()
+                
         except Exception as e:
             logger.error(f"Error retrieving fighter data for {fighter_name}: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
             return None
+        finally:
+            if conn:
+                conn.close()
     
     def _get_fighter_record(self, fighter_name):
         """Get fighter record from the database"""
@@ -653,9 +672,9 @@ class FighterPredictor:
                 SELECT f1.* 
                 FROM fighter_last_5_fights f1
                 WHERE f1.result IS NOT NULL 
-                AND f1.result != ''
-                AND f1.opponent IS NOT NULL
-                AND f1.opponent != ''
+                    AND f1.result != ''
+                    AND f1.opponent IS NOT NULL
+                    AND f1.opponent != ''
                 ORDER BY f1.fight_date DESC
             """)
             

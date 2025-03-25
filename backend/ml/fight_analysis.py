@@ -550,4 +550,18 @@ def generate_matchup_analysis(
         return " ".join(analysis)
     except Exception as e:
         logger.error(f"Error generating fight analysis: {str(e)}")
-        return f"Analysis unavailable. Error: {str(e)}" 
+        return f"Analysis unavailable. Error: {str(e)}"
+
+def update_dict_recursive(target_dict: Dict[str, Any], source_dict: Dict[str, Any]) -> None:
+    """
+    Recursively update dictionary target_dict with values from source_dict.
+    
+    Args:
+        target_dict: Target dictionary to update
+        source_dict: Source dictionary with new values
+    """
+    for key, value in source_dict.items():
+        if key in target_dict and isinstance(target_dict[key], dict) and isinstance(value, dict):
+            update_dict_recursive(target_dict[key], value)
+        else:
+            target_dict[key] = value 
