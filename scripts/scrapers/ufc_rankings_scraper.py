@@ -1,23 +1,25 @@
 """
 UFC Rankings Scraper
 
-This module fetches fighter rankings from the UFC website and stores them directly in the fighters table.
-Fighter rankings are used to improve prediction accuracy by factoring in the strength of
-a fighter's competition.
+This module fetches fighter rankings from the UFC website and stores them directly
+in the fighters table. Fighter rankings are used to improve prediction accuracy by
+factoring in the strength of a fighter's competition.
 """
 
 import os
 import sys
+import json
+import logging
+import re
+import sqlite3
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, Any, Optional
+from unicodedata import normalize
+
 import requests
 from bs4 import BeautifulSoup
-import logging
-import time
-import sqlite3
-import re
-import json
-from datetime import datetime
-from unicodedata import normalize
-from pathlib import Path
 
 # Fix path for direct script execution
 if __name__ == "__main__":
@@ -27,14 +29,16 @@ if __name__ == "__main__":
     sys.path.insert(0, project_root)
 
 # Base Directories and constants
-BASE_DIR = Path(project_root) if 'project_root' in locals() else Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+BASE_DIR = (Path(project_root) if 'project_root' in locals() 
+           else Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 DATA_DIR = BASE_DIR / "data"
 DB_NAME = "ufc_fighters.db"
 DB_PATH = DATA_DIR / DB_NAME
 
 # Web Scraping Configuration
 REQUEST_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 }
 REQUEST_TIMEOUT = 15  # seconds
 RETRY_ATTEMPTS = 3
@@ -50,7 +54,13 @@ try:
     from backend.api.database import get_db_connection
 except ImportError:
     # Fallback if can't import
-    def get_db_connection():
+    def get_db_connection() -> Optional[sqlite3.Connection]:
+        """
+        Create a connection to the SQLite database.
+        
+        Returns:
+            Optional[sqlite3.Connection]: Database connection if successful, None otherwise
+        """
         try:
             conn = sqlite3.connect(DB_PATH)
             conn.row_factory = sqlite3.Row
@@ -90,8 +100,16 @@ WEIGHT_CLASSES = {
 # Path to cached rankings file
 CACHED_RANKINGS_PATH = os.path.join(DATA_DIR, "cached_rankings.json")
 
-def cache_rankings(rankings):
-    """Cache the rankings to a file for future use"""
+def cache_rankings(rankings: Dict[str, Any]) -> bool:
+    """
+    Cache the rankings to a file for future use.
+    
+    Args:
+        rankings: Dictionary containing fighter rankings data
+        
+    Returns:
+        bool: True if caching was successful, False otherwise
+    """
     try:
         if not rankings:
             return False
