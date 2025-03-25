@@ -97,47 +97,13 @@ session.headers.update(REQUEST_HEADERS)
 # 1) RECREATE TABLE with AUTOINCREMENT and reordered columns
 ###############################################################################
 def recreate_last5_table() -> None:
-    """Clear all rows from 'fighter_last_5_fights' table and reset sequence."""
+    """Clear all rows from 'fighter_last_5_fights' table."""
     try:
-        # First try to truncate the table
-        sql = "TRUNCATE TABLE fighter_last_5_fights RESTART IDENTITY CASCADE;"
-        supabase.table("fighters").select("*").limit(1).execute()  # Ensure connection
-        supabase.postgrest.rpc('raw_sql', {'query': sql}).execute()
-        
-        # If truncate fails, try dropping and recreating
-        sql = """
-        DROP TABLE IF EXISTS fighter_last_5_fights;
-        CREATE TABLE fighter_last_5_fights (
-            id SERIAL PRIMARY KEY,
-            fighter_name TEXT,
-            fight_url TEXT,
-            kd TEXT,
-            sig_str TEXT,
-            sig_str_pct TEXT,
-            total_str TEXT,
-            head_str TEXT,
-            body_str TEXT,
-            leg_str TEXT,
-            takedowns TEXT,
-            td_pct TEXT,
-            ctrl TEXT,
-            result TEXT,
-            method TEXT,
-            opponent TEXT,
-            fight_date TEXT,
-            event TEXT
-        );
-        """
-        supabase.postgrest.rpc('raw_sql', {'query': sql}).execute()
+        # Delete all rows from the table
+        supabase.table("fighter_last_5_fights").delete().neq("id", 0).execute()
         logger.info("Cleared 'fighter_last_5_fights' table.")
     except Exception as e:
         logger.error(f"Error clearing fighter_last_5_fights table: {e}")
-        # Try direct delete as last resort
-        try:
-            supabase.table("fighter_last_5_fights").delete().neq("id", 0).execute()
-            logger.info("Cleared table using delete operation")
-        except Exception as e2:
-            logger.error(f"Failed to clear table using delete: {e2}")
 
 ###############################################################################
 # 2) FETCH FIGHTERS
@@ -686,46 +652,43 @@ def scrape_fight_page_for_fighter(fight_url: str, fighter_name: str, fallback_da
 ###############################################################################
 # 9) STORE FIGHT DATA (Manual check for duplicates)
 ###############################################################################
-def store_fight_data(row_data: dict) -> bool:
-    """Store fight data in Supabase, maintaining proper ID ordering (newer fights get lower IDs)."""
+def store_fight_data(fighter_name: str, fight_url: str, fallback_date: str) -> bool:
+    """Store fight data in the database"""
     try:
-        # Get current fights for this fighter
-        current_fights = get_fighter_fights(row_data['fighter_name'])
-        
-        # Calculate the next ID based on the total number of fights in the table
-        response = supabase.table("fighter_last_5_fights").select("id").execute()
-        all_fights = response.data if response.data else []
-        next_id = len(all_fights) + 1
-        
-        # Assign ID to the new fight
-        row_data['id'] = next_id
-        
-        # If we already have 5 fights for this fighter, don't add more
-        if len(current_fights) >= 5:
-            logger.warning(f"Already have {len(current_fights)} fights for {row_data['fighter_name']}, skipping")
+        # Get fight details
+        fight_details = scrape_fight_page_for_fighter(fight_url, fighter_name, fallback_date)
+        if not fight_details:
+            logger.error(f"Failed to get fight details for {fighter_name} from {fight_url}")
             return False
-        
-        # Ensure all required fields are present
-        required_fields = [
-            'fighter_name', 'fight_url', 'kd', 'sig_str', 'sig_str_pct',
-            'total_str', 'head_str', 'body_str', 'leg_str', 'takedowns',
-            'td_pct', 'ctrl', 'result', 'method', 'opponent', 'fight_date', 'event'
-        ]
-        
-        for field in required_fields:
-            if field not in row_data:
-                row_data[field] = ''  # Set empty string for missing fields
-                
-        # Insert the fight data
-        response = supabase.table("fighter_last_5_fights").insert(row_data).execute()
-        
-        success = len(response.data) > 0
-        if success:
-            logger.info(f"Stored fight for {row_data['fighter_name']} with ID {row_data['id']}")
-        else:
-            logger.warning(f"Failed to store fight for {row_data['fighter_name']}")
-        return success
-        
+
+        # Prepare row data with ALL fields from fight_details
+        row_data = {
+            'fighter_name': fighter_name,
+            'fight_url': fight_url,
+            'kd': fight_details['kd'],
+            'sig_str': fight_details['sig_str'],
+            'sig_str_pct': fight_details['sig_str_pct'],
+            'total_str': fight_details['total_str'],
+            'head_str': fight_details['head_str'],
+            'body_str': fight_details['body_str'],
+            'leg_str': fight_details['leg_str'],
+            'takedowns': fight_details['takedowns'],
+            'td_pct': fight_details['td_pct'],
+            'ctrl': fight_details['ctrl'],
+            'result': fight_details['result'],
+            'method': fight_details['method'],
+            'opponent': fight_details['opponent'],
+            'fight_date': fight_details['fight_date'],
+            'event': fight_details['event']
+        }
+
+        # Insert the fight
+        success = insert_fighter_fight(row_data)
+        if not success:
+            logger.error(f"Failed to store fight data for {fighter_name}")
+            return False
+
+        return True
     except Exception as e:
         logger.error(f"Error storing fight data: {e}")
         return False
@@ -936,9 +899,9 @@ def get_fighter_latest_fights(fighter_url, fighter_name, max_fights=MAX_FIGHTS, 
     
     # Get fights (either just most recent or all 5)
     fight_data_list = []
-    for row_date_str, link in fight_info:
+    for date_str, link in fight_info:
         # Scrape each fight's data
-        row_data = scrape_fight_page_for_fighter(link, fighter_name, row_date_str)
+        row_data = scrape_fight_page_for_fighter(link, fighter_name, date_str)
         logger.info(f"Retrieved fight data: {row_data.get('event')} vs {row_data.get('opponent')}")
         fight_data_list.append(row_data)
         
@@ -975,7 +938,7 @@ def update_fighter_latest_fight(fighter_name, fighter_url, recent_only=False):
             # Store the final set of fights
             success_count = 0
             for fight_data in final_fights:
-                if store_fight_data(fight_data):
+                if store_fight_data(fighter_name, fight_data['fight_url'], fight_data['fight_date']):
                     success_count += 1
                 else:
                     logger.warning(f"Failed to store fight vs {fight_data.get('opponent')} for {fighter_name}")
@@ -999,7 +962,7 @@ def update_fighter_latest_fight(fighter_name, fighter_url, recent_only=False):
             # Store all fight data
             success_count = 0
             for fight_data in fight_data_list:
-                if store_fight_data(fight_data):
+                if store_fight_data(fighter_name, fight_data['fight_url'], fight_data['fight_date']):
                     success_count += 1
                 else:
                     logger.warning(f"Failed to store fight vs {fight_data.get('opponent')} for {fighter_name}")
@@ -1074,29 +1037,29 @@ def process_recent_event():
 # MAIN
 ###############################################################################
 def process_fighter(fighter_name: str, fighter_url: str, mode: str = 'all') -> bool:
-    """Process a fighter's fights and update the database."""
+    """Process a fighter's fights"""
     try:
-        # Get all fights for the fighter
+        # Get all fight links for the fighter
         fight_links = get_fight_links_top5(fighter_url)
         if not fight_links:
             logger.warning(f"No fights found for {fighter_name}")
             return False
-            
+
         logger.info(f"Found {len(fight_links)} fights for {fighter_name}")
-        
-        # Delete existing fights first
+
+        # Delete existing fights for this fighter
         delete_fighter_fights(fighter_name)
-        
-        # Process each fight in order (newest first)
+
+        # Process each fight
         success_count = 0
         for date_str, fight_url in fight_links:
-            fight_data = scrape_fight_page_for_fighter(fight_url, fighter_name, date_str)
-            if fight_data and store_fight_data(fight_data):
+            logger.info(f"Selected fight: {date_str} - {fight_url}")
+
+            if store_fight_data(fighter_name, fight_url, date_str):
                 success_count += 1
-                
+
         logger.info(f"Successfully processed {success_count}/{len(fight_links)} fights for {fighter_name}")
         return success_count > 0
-        
     except Exception as e:
         logger.error(f"Error processing fighter {fighter_name}: {e}")
         return False
