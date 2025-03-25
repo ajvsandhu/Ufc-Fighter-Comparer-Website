@@ -1,6 +1,9 @@
 """
 Configuration module for UFC fighter prediction system.
-This module allows for easy modification of model parameters and prediction settings.
+
+This module manages the configuration settings for the prediction system,
+including model parameters, feature weights, and various prediction settings.
+It provides functionality to load, update, and reset configuration values.
 """
 
 import os
@@ -99,11 +102,15 @@ DEFAULT_CONFIG = {
 }
 
 # Global variable to store active configuration
-_active_config = None
+_active_config: Optional[Dict[str, Any]] = None
 
 def get_config() -> Dict[str, Any]:
     """
     Get the current configuration.
+    
+    This function retrieves the current configuration, loading it from file
+    if it hasn't been loaded yet. If no configuration file exists, it uses
+    the default configuration.
     
     Returns:
         Dict[str, Any]: The current configuration dictionary
@@ -132,8 +139,12 @@ def update_config(new_config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Update the configuration with new values.
     
+    This function updates the current configuration with new values,
+    handling nested dictionaries recursively. The updated configuration
+    is then saved to disk.
+    
     Args:
-        new_config (Dict[str, Any]): New configuration values to update
+        new_config: New configuration values to update
         
     Returns:
         Dict[str, Any]: The updated configuration dictionary
@@ -144,7 +155,14 @@ def update_config(new_config: Dict[str, Any]) -> Dict[str, Any]:
         _active_config = get_config()
     
     # Update configuration recursively
-    def update_dict_recursive(d1, d2):
+    def update_dict_recursive(d1: Dict[str, Any], d2: Dict[str, Any]) -> None:
+        """
+        Recursively update dictionary d1 with values from d2.
+        
+        Args:
+            d1: Target dictionary to update
+            d2: Source dictionary with new values
+        """
         for k, v in d2.items():
             if k in d1 and isinstance(d1[k], dict) and isinstance(v, dict):
                 update_dict_recursive(d1[k], v)
@@ -157,13 +175,23 @@ def update_config(new_config: Dict[str, Any]) -> Dict[str, Any]:
     return _active_config
 
 def reset_config() -> None:
-    """Reset the configuration to default values."""
+    """
+    Reset the configuration to default values.
+    
+    This function resets the current configuration to the default values
+    defined in DEFAULT_CONFIG and saves the changes to disk.
+    """
     global _active_config
     _active_config = DEFAULT_CONFIG.copy()
     _save_config()
 
 def _save_config() -> None:
-    """Save the current configuration to file."""
+    """
+    Save the current configuration to file.
+    
+    This function saves the current configuration to the configured file path,
+    creating the necessary directories if they don't exist.
+    """
     global _active_config
     
     if _active_config is not None:
