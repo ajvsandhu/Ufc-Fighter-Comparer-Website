@@ -6,10 +6,21 @@ import string
 import re
 import time
 import random
-import sqlite3
 import os
 import argparse
 from datetime import datetime
+import logging
+from dotenv import load_dotenv
+import sys
+
+# Simple fix - add the project root to Python's path
+sys.path.insert(0, '.')
+
+# Load environment variables
+load_dotenv()
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 # Use a persistent session for faster HTTP requests
 HEADERS = {
@@ -24,11 +35,20 @@ session.headers.update(HEADERS)
 MAX_WORKERS = 10
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Explicitly prioritize the data folder for the database
-DATA_DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/ufc_fighters.db"))
-DB_PATH = DATA_DB_PATH
+# Import Supabase client
+from backend.supabase_client import (
+    supabase, 
+    test_connection,
+    get_fighters,
+    get_fighter_by_url,
+    insert_fighter,
+    update_fighter,
+    upsert_fighter
+)
 
-print(f"[INFO] Using database at: {DB_PATH}")
+# Test Supabase connection
+if not test_connection():
+    raise ValueError("Could not connect to Supabase. Please check your credentials and network connection.")
 
 def clean_record_text(rec_txt):
     rec_txt = rec_txt.replace("Record:", "").strip()
@@ -232,22 +252,19 @@ def parse_fighter_name(fighter_name):
         return (first_name, last_name)
 
 def get_existing_fighters():
+    """
+    Return a dictionary of existing fighters {fighter_url: fighter_name}
+    """
     try:
-        conn = sqlite3.connect(DB_PATH)
-        # Check if the table exists
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='fighters'")
-        if cursor.fetchone():
-            # Read existing fighters
-            query = "SELECT fighter_name, fighter_url FROM fighters"
-            existing_df = pd.read_sql_query(query, conn)
-            conn.close()
+        # Query existing fighters from Supabase
+        response = supabase.table("fighters").select("fighter_name, fighter_url").execute()
+        if response.data:
             # Create dictionary mapping URLs to names for quick lookups
-            return {row['fighter_url']: row['fighter_name'] for _, row in existing_df.iterrows()}
-        conn.close()
+            return {row['fighter_url']: row['fighter_name'] for row in response.data}
+        return {}
     except Exception as e:
-        print(f"[WARN] Could not read existing fighters: {e}")
-    return {}
+        print(f"[ERROR] Could not read existing fighters from Supabase: {e}")
+        return {}
 
 def update_fighter_database(new_data_df):
     try:
@@ -271,58 +288,10 @@ def update_fighter_database(new_data_df):
             if len(problematic_names) > 10:
                 print(f"  - ... and {len(problematic_names) - 10} more")
         
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
-        # Check if the table exists and what columns it has
-        cursor.execute("PRAGMA table_info(fighters)")
-        existing_columns = [col[1] for col in cursor.fetchall()]
-        
-        # Our core columns from the scraping
-        base_columns = [
-            "fighter_name", "Record",
-            "Height", "Weight", "Reach", "STANCE", "DOB",
-            "SLpM", "Str. Acc.", "SApM", "Str. Def",
-            "TD Avg.", "TD Acc.", "TD Def.", "Sub. Avg.",
-            "fighter_url"
-        ]
-        
-        # Additional columns that might exist in the database
-        potential_extra_columns = [
-            "image_url", "tap_link", "ranking", "is_champion", "last_ranking_update"
-        ]
-        
-        # Determine which extra columns exist
-        extra_columns = [col for col in potential_extra_columns if col in existing_columns]
-        
-        if not existing_columns:
-            # Table doesn't exist yet, create it with base columns
-            columns = base_columns
-            column_defs = ", ".join([f'"{col}" TEXT' for col in columns])
-            cursor.execute(f"CREATE TABLE IF NOT EXISTS fighters ({column_defs})")
-        else:
-            # Table exists, use all existing columns
-            columns = existing_columns
-        
-        print(f"[INFO] Using {len(columns)} columns: {', '.join(columns)}")
-        
         # Get existing fighter URLs
-        cursor.execute("SELECT fighter_url FROM fighters")
-        existing_urls = [row[0] for row in cursor.fetchall()]
+        response = supabase.table("fighters").select("fighter_url").execute()
+        existing_urls = [row['fighter_url'] for row in response.data] if response.data else []
         print(f"[INFO] Found {len(existing_urls)} existing fighters in database")
-        
-        # If there are extra columns, we need to preserve their values
-        extra_column_data = {}
-        if extra_columns:
-            try:
-                query = f"SELECT fighter_url, {', '.join(extra_columns)} FROM fighters"
-                cursor.execute(query)
-                for row in cursor.fetchall():
-                    fighter_url = row[0]
-                    values = row[1:]
-                    extra_column_data[fighter_url] = dict(zip(extra_columns, values))
-            except Exception as e:
-                print(f"[WARN] Could not read extra column data: {e}")
         
         # Track statistics
         new_count = 0
@@ -341,77 +310,86 @@ def update_fighter_database(new_data_df):
                 # Convert row to dictionary for easier handling
                 row_dict = row.to_dict()
                 
-                # Add extra column data if available
-                if fighter_url in extra_column_data:
-                    for col, val in extra_column_data[fighter_url].items():
-                        row_dict[col] = val
-                else:
-                    # For new fighters, set default values for extra columns
-                    for col in extra_columns:
-                        if col == "ranking":
-                            row_dict[col] = "99"  # Default ranking
-                        elif col == "is_champion":
-                            row_dict[col] = 0  # Not a champion by default
-                        else:
-                            row_dict[col] = None  # Other columns default to NULL
-                
                 # Check if fighter exists
                 if fighter_url in existing_urls:
-                    # Get current data
-                    cursor.execute("SELECT * FROM fighters WHERE fighter_url = ?", (fighter_url,))
-                    current_data = cursor.fetchone()
-                    column_names = [description[0] for description in cursor.description]
-                    current_dict = dict(zip(column_names, current_data))
+                    # Get current data from Supabase
+                    fighter_response = supabase.table("fighters").select("*").eq("fighter_url", fighter_url).execute()
                     
-                    # Check if any data has changed
-                    changed = False
-                    changed_fields = []
-                    for col in base_columns:  # Only check base columns for changes
-                        if col in current_dict and col in row_dict:
-                            new_val = str(row_dict.get(col, "N/A"))
-                            old_val = str(current_dict.get(col, "N/A"))
-                            if new_val != old_val:
-                                changed = True
-                                changed_fields.append(col)
-                    
-                    if changed:
-                        # Update the record
-                        set_clauses = ", ".join([f'"{col}" = ?' for col in columns])
-                        values = [row_dict.get(col, "N/A") for col in columns]
-                        values.append(fighter_url)  # For the WHERE clause
+                    if fighter_response.data and len(fighter_response.data) > 0:
+                        current_dict = fighter_response.data[0]
                         
-                        cursor.execute(f"UPDATE fighters SET {set_clauses} WHERE fighter_url = ?", values)
-                        updated_count += 1
+                        # Check if any data has changed (only check base columns)
+                        base_columns = [
+                            "fighter_name", "Record", "Height", "Weight", "Reach", "STANCE", "DOB",
+                            "SLpM", "Str. Acc.", "SApM", "Str. Def", "TD Avg.", "TD Acc.", "TD Def.", 
+                            "Sub. Avg.", "fighter_url"
+                        ]
                         
-                        # Debug log for updates
-                        if updated_count <= 5:  # Only show first 5 updates to avoid log spam
-                            fighter_name = row_dict.get('fighter_name', 'Unknown')
-                            print(f"[DEBUG] Updated fighter: {fighter_name}")
-                            for field in changed_fields:
-                                old = current_dict.get(field, 'N/A')
-                                new = row_dict.get(field, 'N/A')
-                                print(f"  - {field}: '{old}' -> '{new}'")
+                        changed = False
+                        changed_fields = []
+                        for col in base_columns:
+                            if col in current_dict and col in row_dict:
+                                new_val = str(row_dict.get(col, "N/A"))
+                                old_val = str(current_dict.get(col, "N/A"))
+                                if new_val != old_val:
+                                    changed = True
+                                    changed_fields.append(col)
+                        
+                        if changed:
+                            # Update the record
+                            # Preserve any additional fields that were not in the scrape
+                            for field in current_dict:
+                                if field not in row_dict and field not in ['id', 'created_at', 'updated_at']:
+                                    row_dict[field] = current_dict[field]
+                            
+                            # Update the fighter in Supabase
+                            update_response = supabase.table("fighters").update(row_dict).eq("fighter_url", fighter_url).execute()
+                            
+                            if update_response.data:
+                                updated_count += 1
+                                
+                                # Debug log for updates
+                                if updated_count <= 5:  # Only show first 5 updates to avoid log spam
+                                    fighter_name = row_dict.get('fighter_name', 'Unknown')
+                                    print(f"[DEBUG] Updated fighter: {fighter_name}")
+                                    for field in changed_fields:
+                                        old = current_dict.get(field, 'N/A')
+                                        new = row_dict.get(field, 'N/A')
+                                        print(f"  - {field}: '{old}' -> '{new}'")
+                            else:
+                                error_count += 1
+                                print(f"[ERROR] Failed to update fighter: {fighter_url}")
+                        else:
+                            unchanged_count += 1
                     else:
-                        unchanged_count += 1
+                        # This shouldn't happen but handle it anyway
+                        print(f"[WARN] Fighter URL in existing_urls but not found in database: {fighter_url}")
+                        
+                        # Insert as new record
+                        insert_response = supabase.table("fighters").insert(row_dict).execute()
+                        if insert_response.data:
+                            new_count += 1
+                        else:
+                            error_count += 1
                 else:
                     # Insert new record
-                    placeholders = ", ".join(["?" for _ in columns])
-                    values = [row_dict.get(col, "N/A") for col in columns]
+                    insert_response = supabase.table("fighters").insert(row_dict).execute()
                     
-                    cursor.execute(f"INSERT INTO fighters ({', '.join([f'"{col}"' for col in columns])}) VALUES ({placeholders})", values)
-                    new_count += 1
-                    
-                    # Debug log for new fighters
-                    if new_count <= 5:  # Only show first 5 new fighters
-                        print(f"[DEBUG] New fighter added: {row_dict.get('fighter_name', 'Unknown')}")
+                    if insert_response.data:
+                        new_count += 1
+                        
+                        # Debug log for new fighters
+                        if new_count <= 5:  # Only show first 5 new fighters
+                            print(f"[DEBUG] New fighter added: {row_dict.get('fighter_name', 'Unknown')}")
+                    else:
+                        error_count += 1
+                        print(f"[ERROR] Failed to insert fighter: {fighter_url}")
             except Exception as e:
                 error_count += 1
                 print(f"[ERROR] Failed to process fighter: {e}")
+                import traceback
+                traceback.print_exc()
                 # Continue with next fighter instead of failing completely
-        
-        # Commit changes and close connection
-        conn.commit()
-        conn.close()
         
         print("\n" + "="*50)
         print(f"[DONE] Database update complete:")

@@ -1,14 +1,9 @@
-import Database from 'better-sqlite3'
-import path from 'path'
+import { createClient } from '@supabase/supabase-js'
 
-// Get the database path from environment variable or use default
-const dbPath = process.env.DATABASE_PATH 
-  ? path.resolve(process.cwd(), process.env.DATABASE_PATH)
-  : path.resolve(process.cwd(), '../data/ufc_fighters.db')
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-export function getDb() {
-  return new Database(dbPath, { readonly: true })
-}
+export const supabase = createClient(supabaseUrl, supabaseKey)
 
 // Export an empty object to make this a module
 export {} 

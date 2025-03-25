@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
+import { supabase } from '@/lib/db'
 
 interface Fighter {
-  name: string
+  fighter_name: string
   nickname: string | null
   division: string | null
 }
@@ -16,21 +16,18 @@ export async function GET(request: Request) {
   }
 
   try {
-    const db = getDb()
-    
-    // Search for fighters where name matches the query
-    const fighters = db.prepare(`
-      SELECT name, nickname, division
-      FROM fighters
-      WHERE name LIKE ?
-      OR nickname LIKE ?
-      LIMIT 5
-    `).all(`%${query}%`, `%${query}%`) as Fighter[]
+    const { data: fighters, error } = await supabase
+      .from('fighters')
+      .select('fighter_name, nickname, division')
+      .or(`fighter_name.ilike.%${query}%,nickname.ilike.%${query}%`)
+      .limit(5)
+
+    if (error) throw error
 
     // Format the results
-    const formattedFighters = fighters.map((fighter: Fighter) => {
+    const formattedFighters = (fighters as Fighter[]).map((fighter: Fighter) => {
       const parts = []
-      parts.push(fighter.name)
+      parts.push(fighter.fighter_name)
       if (fighter.nickname) parts.push(`"${fighter.nickname}"`)
       if (fighter.division) parts.push(fighter.division)
       return parts.join(' ')
