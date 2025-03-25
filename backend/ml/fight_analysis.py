@@ -1,16 +1,36 @@
 """
 Enhanced fight analysis module for generating detailed, data-driven breakdowns.
+
+This module provides comprehensive analysis of UFC fights, including fighter advantages,
+matchup analysis, and detailed breakdowns of various aspects of the fight.
 """
 
 import logging
+from typing import Dict, List, Any, Optional, Tuple
 from backend.ml.feature_engineering import safe_convert_to_float
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def calculate_fighter_advantages(fighter1_data, fighter2_data):
-    """Calculate specific advantages between fighters based on their stats"""
+def calculate_fighter_advantages(
+    fighter1_data: Dict[str, Any],
+    fighter2_data: Dict[str, Any]
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Calculate specific advantages between fighters based on their stats.
+    
+    This function analyzes various aspects of both fighters and determines
+    who has the advantage in different categories including striking, grappling,
+    defense, physical attributes, experience, and momentum.
+    
+    Args:
+        fighter1_data: Dictionary containing first fighter's statistics
+        fighter2_data: Dictionary containing second fighter's statistics
+        
+    Returns:
+        Dict[str, Dict[str, Any]]: Dictionary containing advantages in different categories
+    """
     advantages = {
         'striking': {},
         'grappling': {},
@@ -197,8 +217,34 @@ def calculate_fighter_advantages(fighter1_data, fighter2_data):
     
     return advantages
 
-def generate_matchup_analysis(fighter1_data, fighter2_data, head_to_head, common_opponents, prediction_data):
-    """Generate a detailed, data-driven analysis of the matchup"""
+def generate_matchup_analysis(
+    fighter1_data: Dict[str, Any],
+    fighter2_data: Dict[str, Any],
+    head_to_head: Optional[Dict[str, Any]] = None,
+    common_opponents: Optional[Dict[str, Any]] = None,
+    prediction_data: Optional[Dict[str, Any]] = None
+) -> str:
+    """
+    Generate a detailed, data-driven analysis of the matchup.
+    
+    This function creates a comprehensive analysis of the matchup by considering:
+    - Fighter advantages in various categories
+    - Head-to-head history
+    - Common opponents
+    - Recent performance
+    - Physical attributes
+    - Fighting styles
+    
+    Args:
+        fighter1_data: Dictionary containing first fighter's data
+        fighter2_data: Dictionary containing second fighter's data
+        head_to_head: Optional dictionary containing head-to-head history
+        common_opponents: Optional dictionary containing common opponents analysis
+        prediction_data: Optional dictionary containing prediction results
+        
+    Returns:
+        str: Detailed analysis of the matchup
+    """
     try:
         # Get fighter names
         fighter1_name = fighter1_data.get('fighter_name', '') or fighter1_data.get('name', '')
