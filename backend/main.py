@@ -1,7 +1,7 @@
 import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from backend.api.routes.fighters import router as fighters_router
+from backend.api.routes.fighters_order_fix import router as fighters_router
 from backend.api.routes.predictions import router as predictions_router
 from backend.api.database import get_db_connection
 from backend.constants import (

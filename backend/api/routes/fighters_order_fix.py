@@ -30,16 +30,27 @@ def get_fighters(query: str = Query("", min_length=0)):
             # Fetch fighters data from Supabase
             if not query:
                 # If no query, return all fighters
-                response = supabase.table('fighters')\
-                    .select('fighter_name,Record,ranking')\
-                    .order('ranking')\
-                    .execute()
+                try:
+                    # First try with nulls_last parameter
+                    response = supabase.table('fighters')\
+                        .select('fighter_name,Record,ranking,id')\
+                        .order('ranking', desc=False, nulls_last=True)\
+                        .limit(MAX_SEARCH_RESULTS)\
+                        .execute()
+                except Exception:
+                    # Fall back to simpler ordering if the above fails
+                    response = supabase.table('fighters')\
+                        .select('fighter_name,Record,ranking,id')\
+                        .order('ranking')\
+                        .limit(MAX_SEARCH_RESULTS)\
+                        .execute()
             else:
                 # If query exists, use ilike for case-insensitive search
                 response = supabase.table('fighters')\
-                    .select('fighter_name,Record,ranking')\
+                    .select('fighter_name,Record,ranking,id')\
                     .ilike('fighter_name', f'%{query}%')\
                     .order('ranking')\
+                    .limit(MAX_SEARCH_RESULTS)\
                     .execute()
             
             if not response.data:
@@ -95,20 +106,6 @@ def get_fighters(query: str = Query("", min_length=0)):
                     # Format name with record and add to results
                     formatted_name = f"{fighter_name} ({record})"
                     fighters_list.append(formatted_name)
-            
-            # Sort results by ranking (if available) and then alphabetically
-            def sort_key(name):
-                # Extract original fighter name from the formatted string
-                original_name = name.split(" (")[0]
-                # Find the corresponding ranking
-                for fighter in fighter_data:
-                    if fighter.get('fighter_name') == original_name:
-                        ranking = fighter.get('ranking')
-                        # Return tuple for sorting: (has_ranking, ranking_value, name)
-                        return (ranking is not None, ranking if ranking is not None else UNRANKED_VALUE, original_name)
-                return (False, UNRANKED_VALUE, original_name)
-            
-            fighters_list.sort(key=sort_key)
         
         return {"fighters": fighters_list[:MAX_SEARCH_RESULTS]}
         
@@ -150,6 +147,7 @@ def get_fighter_stats(name: str):
                 .select('*')\
                 .eq('fighter_name', base_name)\
                 .eq('Record', record)\
+                .limit(1)\
                 .execute()
                 
             if response.data and len(response.data) > 0:
@@ -161,6 +159,7 @@ def get_fighter_stats(name: str):
             response = supabase.table('fighters')\
                 .select('*')\
                 .ilike('fighter_name', base_name)\
+                .limit(1)\
                 .execute()
                 
             if response.data and len(response.data) > 0:
@@ -172,6 +171,7 @@ def get_fighter_stats(name: str):
             response = supabase.table('fighters')\
                 .select('*')\
                 .ilike('fighter_name', f'%{base_name}%')\
+                .limit(1)\
                 .execute()
                 
             if response.data and len(response.data) > 0:

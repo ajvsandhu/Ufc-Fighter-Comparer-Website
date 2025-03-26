@@ -1,107 +1,135 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
-Manual URL Updater for the fighters table.
-Allows manual input of image_url and tap_link for a specified fighter.
-"""
+Manual URL Updater
 
+A utility for manually updating fighter image URLs and Tapology links in the database.
+"""
 import os
 import sys
-import logging
-import sqlite3
 
-# Fix import by correctly adding the project root to sys.path
-# Get the absolute path to the project root directory
+# Fix import paths
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-    print(f"Added {PROJECT_ROOT} to Python path")
 
-# Now import from backend should work
-from backend.api.database import get_db_connection
+from backend.api.database import get_supabase_client
+import logging
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("manual_url_updater.log")
+    ]
+)
+logger = logging.getLogger("manual_url_updater")
 
-def fighter_exists(fighter_name: str) -> bool:
-    """Checks if a fighter exists in the database."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM fighters WHERE fighter_name = ?", (fighter_name,))
-    exists = cur.fetchone()[0] > 0
-    conn.close()
-    return exists
-
-def update_fighter_urls(fighter_name: str, image_url: str, tap_link: str):
-    """Updates the fighter's image_url and tap_link in the database."""
-    conn = get_db_connection()
-    cur = conn.cursor()
+def check_fighter_exists(fighter_name):
+    """
+    Verify fighter exists in database.
+    """
     try:
-        cur.execute(
-            "UPDATE fighters SET image_url = ?, tap_link = ? WHERE fighter_name = ?",
-            (image_url, tap_link, fighter_name)
-        )
-        if cur.rowcount > 0:
-            conn.commit()
-            logger.info(f"Successfully updated {fighter_name}: image_url={image_url}, tap_link={tap_link}")
+        supabase = get_supabase_client()
+        response = supabase.table('fighters') \
+            .select('fighter_name') \
+            .eq('fighter_name', fighter_name) \
+            .execute()
+        
+        return response.data and len(response.data) > 0
+    except Exception as e:
+        logger.error(f"Fighter lookup failed: {str(e)}")
+        return False
+
+def update_fighter_image(fighter_name, image_url):
+    """
+    Update fighter's image URL.
+    """
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table('fighters') \
+            .update({'image_url': image_url}) \
+            .eq('fighter_name', fighter_name) \
+            .execute()
+        
+        if response.data and len(response.data) > 0:
+            logger.info(f"Updated image for {fighter_name}")
+            return True
         else:
-            logger.warning(f"No rows updated for {fighter_name}. Check if the name matches exactly.")
-    except sqlite3.Error as e:
-        logger.error(f"Database error while updating {fighter_name}: {e}")
-    finally:
-        conn.close()
+            logger.debug(f"Image update failed for {fighter_name}")
+            return False
+    except Exception as e:
+        logger.error(f"Image update failed: {str(e)}")
+        return False
+
+def update_fighter_tap_link(fighter_name, tap_link):
+    """
+    Update fighter's Tapology link.
+    """
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table('fighters') \
+            .update({'tap_link': tap_link}) \
+            .eq('fighter_name', fighter_name) \
+            .execute()
+        
+        if response.data and len(response.data) > 0:
+            logger.info(f"Updated Tapology link for {fighter_name}")
+            return True
+        else:
+            logger.debug(f"Link update failed for {fighter_name}")
+            return False
+    except Exception as e:
+        logger.error(f"Link update failed: {str(e)}")
+        return False
 
 def main():
-    """Main function to handle manual URL input."""
-    print("Manual URL Updater for Fighters Table")
-    print("Enter details below. Press Ctrl+C to exit at any time.\n")
-
+    """
+    Interactive prompt for manually updating fighter URLs.
+    """
+    print("\nManual Fighter URL Updater")
+    print("-------------------------")
+    
     while True:
-        try:
-            # Get fighter name
-            fighter_name = input("Enter fighter name (exact match required): ").strip()
-            if not fighter_name:
-                logger.warning("Fighter name cannot be empty. Try again.")
-                continue
-
-            # Check if fighter exists
-            if not fighter_exists(fighter_name):
-                logger.warning(f"'{fighter_name}' not found in the database. Please check the name and try again.")
-                continue
-
-            # Get image URL
-            image_url = input("Enter image_url (or press Enter to skip): ").strip()
-            if not image_url:
-                image_url = None  # Allow skipping with empty input
-
-            # Get Tapology link
-            tap_link = input("Enter tap_link (or press Enter to skip): ").strip()
-            if not tap_link:
-                tap_link = None  # Allow skipping with empty input
-
-            # Confirm before updating
-            print(f"\nConfirm update for {fighter_name}:")
-            print(f"image_url: {image_url if image_url else 'No change'}")
-            print(f"tap_link: {tap_link if tap_link else 'No change'}")
-            confirm = input("Proceed? (y/n): ").lower().strip()
-            if confirm != 'y':
-                logger.info("Update cancelled.")
-                continue
-
-            # Perform the update
-            update_fighter_urls(fighter_name, image_url, tap_link)
-
-            # Ask if user wants to continue
-            more = input("\nUpdate another fighter? (y/n): ").lower().strip()
-            if more != 'y':
-                logger.info("Exiting manual updater.")
-                break
-
-        except KeyboardInterrupt:
-            logger.info("\nUser interrupted. Exiting.")
+        fighter_name = input("\nEnter fighter name (or 'q' to quit): ").strip()
+        if fighter_name.lower() == 'q':
             break
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}")
+            
+        if not check_fighter_exists(fighter_name):
+            print(f"Fighter '{fighter_name}' not found in database")
             continue
+            
+        print("\nUpdate options:")
+        print("1. Image URL")
+        print("2. Tapology Link")
+        print("3. Both")
+        print("4. Skip")
+        
+        choice = input("Choose option (1-4): ").strip()
+        
+        if choice == '1' or choice == '3':
+            image_url = input("Enter new image URL: ").strip()
+            if image_url:
+                if update_fighter_image(fighter_name, image_url):
+                    print("Image URL updated successfully")
+                else:
+                    print("Failed to update image URL")
+                    
+        if choice == '2' or choice == '3':
+            tap_link = input("Enter new Tapology link: ").strip()
+            if tap_link:
+                if update_fighter_tap_link(fighter_name, tap_link):
+                    print("Tapology link updated successfully")
+                else:
+                    print("Failed to update Tapology link")
+                    
+        if choice == '4':
+            continue
+            
+        if choice not in ['1', '2', '3', '4']:
+            print("Invalid choice")
+            
+    print("\nExiting URL updater")
 
 if __name__ == "__main__":
     main()

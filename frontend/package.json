@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "install:deps": "npm install --legacy-peer-deps"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.0.5",
@@ -15,6 +16,7 @@
     "@radix-ui/react-slot": "^1.0.2",
     "@radix-ui/react-tabs": "^1.0.4",
     "@radix-ui/react-toast": "^1.1.5",
+    "@supabase/supabase-js": "^2.39.3",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "cmdk": "^1.1.1",
@@ -41,6 +43,7 @@
     "typescript": "^5.3.3"
   },
   "overrides": {
-    "react-is": "^19.0.0"
+    "react-is": "^19.0.0",
+    "@radix-ui/react-icons": "^2.0.0"
   }
 }

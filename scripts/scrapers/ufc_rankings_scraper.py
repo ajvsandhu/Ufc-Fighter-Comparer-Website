@@ -11,7 +11,6 @@ import sys
 import json
 import logging
 import re
-import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
@@ -21,56 +20,40 @@ from unicodedata import normalize
 import requests
 from bs4 import BeautifulSoup
 
-# Fix path for direct script execution
+# Configure import paths
 if __name__ == "__main__":
-    # Add the project root to the Python path
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(script_dir, '..', '..'))
     sys.path.insert(0, project_root)
 
-# Base Directories and constants
+# Directory configuration
 BASE_DIR = (Path(project_root) if 'project_root' in locals() 
            else Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 DATA_DIR = BASE_DIR / "data"
-DB_NAME = "ufc_fighters.db"
-DB_PATH = DATA_DIR / DB_NAME
 
-# Web Scraping Configuration
+# HTTP client configuration
 REQUEST_HEADERS = {
     "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                   "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 }
-REQUEST_TIMEOUT = 15  # seconds
+REQUEST_TIMEOUT = 15
 RETRY_ATTEMPTS = 3
-RETRY_DELAY = 2  # seconds
+RETRY_DELAY = 2
 
-# Logging Configuration
+# Logger configuration
 LOG_LEVEL = "INFO"
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
-# Try to import from backend if available
+# Database client import
 try:
-    from backend.api.database import get_db_connection
+    from backend.api.database import get_supabase_client
 except ImportError:
-    # Fallback if can't import
-    def get_db_connection() -> Optional[sqlite3.Connection]:
-        """
-        Create a connection to the SQLite database.
-        
-        Returns:
-            Optional[sqlite3.Connection]: Database connection if successful, None otherwise
-        """
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            print(f"Connected to database at: {DB_PATH}")
-            return conn
-        except Exception as e:
-            print(f"Error connecting to database: {str(e)}")
-            return None
+    def get_supabase_client():
+        """Fallback implementation if actual client is unavailable"""
+        raise ImportError("Could not import get_supabase_client from backend.api.database")
 
-# Set up logging
+# Initialize logger
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
     format=LOG_FORMAT,
@@ -78,10 +61,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# UFC rankings URL
+# Source data URL
 UFC_RANKINGS_URL = "https://www.ufc.com/rankings"
 
-# Weight class mapping - we'll use this to match divisions to weight classes
+# Weight class mapping for division normalization
 WEIGHT_CLASSES = {
     "Flyweight": "125",
     "Bantamweight": "135",
@@ -97,7 +80,7 @@ WEIGHT_CLASSES = {
     "Women's Featherweight": "145"
 }
 
-# Path to cached rankings file
+# Cache file location
 CACHED_RANKINGS_PATH = os.path.join(DATA_DIR, "cached_rankings.json")
 
 def cache_rankings(rankings: Dict[str, Any]) -> bool:
@@ -169,27 +152,30 @@ def load_cached_rankings():
         logger.error(f"Error loading cached rankings: {str(e)}")
         return {}
 
-def update_meta_table(conn, key, value):
+def update_meta_table(supabase, key, value):
     """Update or create a meta table for tracking information like last update timestamps"""
     try:
-        cursor = conn.cursor()
+        # Update or insert the key-value pair in Supabase
+        current_time = datetime.now().isoformat()
         
-        # Create meta table if it doesn't exist
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS meta (
-                key TEXT PRIMARY KEY,
-                value TEXT,
-                updated_at TEXT
-            )
-        """)
+        # Check if the key exists first
+        response = supabase.table('meta') \
+            .select('key') \
+            .eq('key', key) \
+            .execute()
+            
+        if response.data and len(response.data) > 0:
+            # Update existing record
+            supabase.table('meta') \
+                .update({'value': value, 'updated_at': current_time}) \
+                .eq('key', key) \
+                .execute()
+        else:
+            # Insert new record
+            supabase.table('meta') \
+                .insert({'key': key, 'value': value, 'updated_at': current_time}) \
+                .execute()
         
-        # Update or insert the key-value pair
-        cursor.execute("""
-            INSERT OR REPLACE INTO meta (key, value, updated_at)
-            VALUES (?, ?, ?)
-        """, (key, value, datetime.now().isoformat()))
-        
-        conn.commit()
         logger.info(f"Updated meta table: {key} = {value}")
         return True
     except Exception as e:
@@ -198,23 +184,33 @@ def update_meta_table(conn, key, value):
 
 def normalize_name(name):
     """
-    Normalize fighter names to improve matching
-    - Remove accents and special characters
-    - Convert to lowercase
-    - Remove punctuation
-    - Remove suffixes like "Jr." or "III"
+    Normalize a fighter name for consistent matching.
+    
+    Args:
+        name: Raw fighter name
+        
+    Returns:
+        str: Normalized fighter name for matching
     """
-    # Remove accents
-    name = normalize('NFKD', name).encode('ASCII', 'ignore').decode('utf-8')
+    if not name:
+        return ""
+        
     # Convert to lowercase
     name = name.lower()
-    # Remove punctuation except spaces
-    name = re.sub(r'[^\w\s]', '', name)
-    # Remove common suffixes
-    name = re.sub(r'\bjr\b|\biii\b|\biv\b|\bsr\b', '', name)
-    # Remove extra spaces
-    name = re.sub(r'\s+', ' ', name).strip()
-    return name
+    
+    # Handle special character replacement
+    name = normalize('NFKD', name).encode('ASCII', 'ignore').decode('utf-8')
+    
+    # Remove extra whitespace
+    name = ' '.join(name.split())
+    
+    # Remove common patterns that might differ between sources
+    name = re.sub(r'[\(\)\[\]\{\}\'\"\.,-]', '', name)
+    
+    # Remove common suffixes that appear in some sources but not others
+    name = re.sub(r'\s+(jr|sr|iii|iv|ii|i)$', '', name)
+    
+    return name.strip()
 
 def fetch_ufc_rankings():
     """Fetch current UFC rankings from the UFC website"""
@@ -515,7 +511,7 @@ def update_fighter_rankings_in_db(fighter_rankings):
     
     conn = None
     try:
-        conn = get_db_connection()
+        conn = get_supabase_client()
         cursor = conn.cursor()
         
         # Ensure fighters table exists
@@ -694,111 +690,250 @@ def generate_fallback_rankings():
     # rather than using potentially outdated hardcoded ranking data
     return {}
 
-if __name__ == "__main__":
-    # When run directly, fetch and update rankings
-    print("Running UFC Rankings Scraper directly...")
+def ensure_fighters_table_has_ranking_column(supabase):
+    """
+    Ensure the fighters table has a ranking column.
+    
+    For Supabase, we assume the column exists in the schema.
+    If it doesn't, you should update the schema through the Supabase dashboard.
+    """
+    logger.info("Verifying ranking column exists in Supabase schema")
+    # With Supabase, we assume the ranking column exists
+    # If it doesn't, your data operations will still work but might not be
+    # visible without a schema update through Supabase dashboard
+    return True
+
+def update_fighter_ranking(supabase, fighter_name, ranking, is_champion=False, division=None, position=None):
+    """
+    Update a fighter's ranking in the database.
+    
+    Args:
+        supabase: Supabase client instance
+        fighter_name: Name of the fighter to update
+        ranking: Current ranking, e.g., "C" for champion, or numeric position
+        is_champion: Whether this fighter is a champion
+        division: Weight division
+        position: Position in rankings (1-15)
+        
+    Returns:
+        bool: True if update was successful, False otherwise
+    """
     try:
-        # Create the database directory if it doesn't exist
-        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        # Prepare update data
+        update_data = {'ranking': ranking}
         
-        print(f"Database directory: {os.path.dirname(DB_PATH)}")
-        
-        # Test database connection
-        try:
-            conn = get_db_connection()
-            conn.execute("SELECT 1")
-            conn.close()
-            print("✅ Database connection successful")
-        except Exception as e:
-            print(f"❌ Database connection error: {str(e)}")
-        
-        # Fetch and update rankings
-        rankings = fetch_ufc_rankings()
-        if rankings:
-            # Count fighters by division
-            division_counts = {}
-            for _, data in rankings.items():
-                division = data['division_weight']
-                if division not in division_counts:
-                    division_counts[division] = 0
-                division_counts[division] += 1
+        if is_champion is not None:
+            update_data['is_champion'] = is_champion
             
-            print(f"Got rankings for {len(rankings)} fighters across {len(division_counts)} divisions:")
-            for division, count in sorted(division_counts.items()):
-                # Map weight to division name
-                division_name = next((name for name, weight in WEIGHT_CLASSES.items() if weight == division), f"{division}lbs")
-                print(f"  - {division_name}: {count} fighters")
+        if division is not None:
+            update_data['weight_class'] = division
             
-            result = update_fighter_rankings_in_db(rankings)
-            if result:
-                print("✅ Successfully updated UFC fighter rankings in the database!")
-                
-                # Print champion information
-                print("\nChampions in the database:")
-                try:
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT fighter_name, ranking, Weight FROM fighters WHERE is_champion=1 ORDER BY Weight")
-                    champions = cursor.fetchall()
-                    
-                    if champions:
-                        for champion in champions:
-                            weight_class = champion[2] if len(champion) > 2 and champion[2] else "Unknown"
-                            print(f"  - {champion[0]} (Rank {champion[1]}, {weight_class})")
-                    else:
-                        print("  No champions found in database")
-                    
-                    # Show counts by division in the database
-                    print("\nUpdated fighters by division:")
-                    cursor.execute("""
-                        SELECT Weight, COUNT(*) 
-                        FROM fighters 
-                        WHERE ranking < 99 
-                        GROUP BY Weight 
-                        ORDER BY Weight
-                    """)
-                    divisions = cursor.fetchall()
-                    
-                    if divisions:
-                        for division in divisions:
-                            if division[0]:
-                                print(f"  - {division[0]}: {division[1]} fighters")
-                    
-                    # Check for specific fighter (Brendan Allen)
-                    print("\nChecking middleweight fighters:")
-                    cursor.execute("SELECT fighter_name, ranking, is_champion FROM fighters WHERE Weight LIKE '%185%' AND ranking < 99 ORDER BY ranking")
-                    fighters = cursor.fetchall()
-                    
-                    if fighters:
-                        for fighter in fighters[:10]:  # Show first 10
-                            print(f"  - Rank {fighter[1]}: {fighter[0]} (Champion: {fighter[2]})")
-                        if len(fighters) > 10:
-                            print(f"  - ... and {len(fighters) - 10} more fighters")
-                    else:
-                        print("  No ranked middleweight fighters found")
-                    
-                    # Check Brendan Allen specifically
-                    cursor.execute("SELECT fighter_name, ranking, is_champion, Weight, last_ranking_update FROM fighters WHERE fighter_name LIKE '%Brendan Allen%'")
-                    brendan = cursor.fetchone()
-                    if brendan:
-                        print(f"\nBrendan Allen: Rank {brendan[1]}, Champion: {brendan[2]}, Weight: {brendan[3]}, Last Updated: {brendan[4]}")
-                    else:
-                        print("\nBrendan Allen not found in database")
-                    
-                    # Check when rankings were last updated
-                    cursor.execute("SELECT value FROM meta WHERE key='rankings_last_updated'")
-                    last_update = cursor.fetchone()
-                    if last_update:
-                        print(f"\nRankings last updated at: {last_update[0]}")
-                    
-                    conn.close()
-                except Exception as e:
-                    print(f"Error checking database: {str(e)}")
-            else:
-                print("❌ Failed to update rankings in the database.")
+        # Execute the update
+        response = supabase.table('fighters') \
+            .update(update_data) \
+            .eq('fighter_name', fighter_name) \
+            .execute()
+            
+        # Check if update was successful
+        if response.data and len(response.data) > 0:
+            logger.debug(f"Updated ranking for {fighter_name}: {ranking}")
+            return True
         else:
-            print("❌ Failed to fetch rankings data.")
+            logger.warning(f"Failed to update ranking for {fighter_name}: fighter not found")
+            return False
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        import traceback
-        traceback.print_exc() 
+        logger.error(f"Error updating ranking for {fighter_name}: {str(e)}")
+        return False
+
+def find_fighter_in_db(supabase, fighter_name):
+    """
+    Find a fighter in the database by name, with fuzzy matching.
+    
+    Args:
+        supabase: Supabase client
+        fighter_name: Name to search for
+        
+    Returns:
+        dict: Fighter data if found, None otherwise
+    """
+    try:
+        # Try exact match first
+        response = supabase.table('fighters') \
+            .select('*') \
+            .eq('fighter_name', fighter_name) \
+            .execute()
+        
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+            
+        # If not found, try normalized name
+        normalized = normalize_name(fighter_name)
+        
+        # Get all fighters with pagination to handle large datasets
+        page_size = 1000
+        all_fighters = []
+        page = 0
+        
+        while True:
+            # Fetch a page of fighters
+            response = supabase.table('fighters') \
+                .select('fighter_name') \
+                .range(page * page_size, (page + 1) * page_size - 1) \
+                .execute()
+            
+            # Add fighters to our list
+            fighters_page = response.data
+            all_fighters.extend(fighters_page)
+            
+            # If we got fewer results than the page size, we've reached the end
+            if len(fighters_page) < page_size:
+                break
+                
+            # Move to next page
+            page += 1
+        
+        # Find best match by comparing normalized names
+        best_match = None
+        best_score = 0
+        
+        for fighter in all_fighters:
+            db_name = fighter['fighter_name']
+            db_normalized = normalize_name(db_name)
+            
+            # Simple scoring: count matching characters
+            score = sum(c1 == c2 for c1, c2 in zip(normalized, db_normalized)) / max(len(normalized), len(db_normalized))
+            
+            if score > 0.85 and score > best_score:
+                best_score = score
+                best_match = db_name
+                
+        if best_match:
+            # Get the full record for the best match
+            response = supabase.table('fighters') \
+                .select('*') \
+                .eq('fighter_name', best_match) \
+                .execute()
+                
+            if response.data and len(response.data) > 0:
+                logger.info(f"Fuzzy matched '{fighter_name}' to '{best_match}' (score: {best_score:.2f})")
+                return response.data[0]
+                
+        return None
+    except Exception as e:
+        logger.error(f"Error finding fighter in database: {str(e)}")
+        return None
+
+def update_fighter_rankings(supabase, rankings_data):
+    """
+    Update fighter rankings in the database.
+    
+    Args:
+        supabase: Supabase client
+        rankings_data: Dictionary of fighter rankings by name
+        
+    Returns:
+        tuple: Count of updates (successful, failed, not_found)
+    """
+    try:
+        # Ensure ranking columns exist
+        ensure_fighters_table_has_ranking_column(supabase)
+        
+        success_count = 0
+        failed_count = 0
+        not_found_count = 0
+        
+        # Process each fighter's ranking
+        for fighter_name, data in rankings_data.items():
+            # Find the fighter in the database
+            fighter = find_fighter_in_db(supabase, fighter_name)
+            
+            if fighter:
+                # Update the fighter's ranking
+                success = update_fighter_ranking(
+                    supabase,
+                    fighter['fighter_name'],  # Use the exact name from the database
+                    data.get('ranking', ''),
+                    data.get('is_champion', False),
+                    data.get('division', '')
+                )
+                
+                if success:
+                    success_count += 1
+                else:
+                    failed_count += 1
+            else:
+                logger.warning(f"Fighter not found in database: {fighter_name}")
+                not_found_count += 1
+                
+        # Update the last rankings update timestamp
+        update_meta_table(supabase, 'last_rankings_update', datetime.now().isoformat())
+        
+        return success_count, failed_count, not_found_count
+    except Exception as e:
+        logger.error(f"Error updating fighter rankings: {str(e)}")
+        return 0, 0, 0
+
+def main():
+    """
+    Main function for the UFC rankings scraper.
+    
+    This function:
+    1. Fetches rankings from UFC website (or uses cache if recent)
+    2. Updates the database with the latest rankings
+    3. Logs the results
+    """
+    logger.info("Starting UFC rankings scraper")
+    
+    try:
+        # Get Supabase connection
+        supabase = get_supabase_client()
+        
+        # Load cached rankings if available and recent
+        cached_rankings = load_cached_rankings()
+        
+        if args.force_refresh or not cached_rankings:
+            logger.info("Fetching fresh rankings from UFC website")
+            rankings = fetch_ufc_rankings()
+            
+            if rankings:
+                # Cache the new rankings
+                cache_rankings(rankings)
+            else:
+                if cached_rankings:
+                    logger.warning("Failed to fetch fresh rankings, using cached data")
+                    rankings = cached_rankings
+                else:
+                    logger.error("Failed to fetch rankings and no cache available")
+                    return
+        else:
+            logger.info("Using cached rankings data")
+            rankings = cached_rankings
+            
+        # Update the database with the rankings
+        success, failed, not_found = update_fighter_rankings(supabase, rankings)
+        
+        logger.info(f"Rankings update complete:")
+        logger.info(f" - {success} fighters updated successfully")
+        logger.info(f" - {failed} updates failed")
+        logger.info(f" - {not_found} fighters not found in database")
+        
+        # Update timestamp
+        update_meta_table(supabase, 'last_rankings_update', datetime.now().isoformat())
+        
+    except Exception as e:
+        logger.error(f"Error in main function: {str(e)}")
+
+if __name__ == "__main__":
+    # Set up argument parser
+    import argparse
+    parser = argparse.ArgumentParser(description='UFC Rankings Scraper')
+    parser.add_argument('--force-refresh', action='store_true', help='Force refresh of rankings data')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    args = parser.parse_args()
+    
+    # Set debug level if requested
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+        
+    # When run directly, fetch and update rankings
+    main() 

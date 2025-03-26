@@ -1,45 +1,79 @@
-import sqlite3
 import os
+import sys
+
+# Add project root to system path
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+    print(f"Added {PROJECT_ROOT} to Python path")
+
+# Import database connection
+from backend.api.database import get_supabase_client
 
 # Constants
 MAX_WORKERS = 1
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "../data/ufc_fighters.db"))
 STICKMAN_URL = "https://static1.cbrimages.com/wordpress/wp-content/uploads/2021/01/Captain-Rocks.jpg"
 
 def update_image_urls():
     """
-    Add image_url column if it doesn't exist and update image URLs for all fighters 
-    to use the stickman placeholder URL, preserving existing data.
+    Updates all fighter image URLs to use the placeholder image.
+    Processes fighters in batches to avoid API rate limits.
     """
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    
-    # Check if image_url column exists, if not, add it
-    cur.execute("PRAGMA table_info(fighters)")
-    columns = [col[1] for col in cur.fetchall()]
-    if 'image_url' not in columns:
-        print("[INFO] Adding image_url column to fighters table")
-        cur.execute("ALTER TABLE fighters ADD COLUMN image_url TEXT")
-    
-    # Get all fighter names from the database
-    cur.execute("SELECT fighter_name FROM fighters")
-    fighters = cur.fetchall()
-    
-    print(f"[INFO] Found {len(fighters)} fighters in the database to process.")
-    
-    # Update each fighter's image_url to the stickman URL
-    for fighter in fighters:
-        fighter_name = fighter[0]
-        cur.execute("""
-            UPDATE fighters 
-            SET image_url = ? 
-            WHERE fighter_name = ?
-        """, (STICKMAN_URL, fighter_name))
-    
-    conn.commit()
-    conn.close()
-    print(f"[DONE] Updated image URLs for {len(fighters)} fighters in '{DB_PATH}' with stickman placeholder")
+    try:
+        # Initialize database connection
+        supabase = get_supabase_client()
+        
+        # Fetch all fighters using pagination to get beyond the 1000 record limit
+        page_size = 1000
+        all_fighters = []
+        page = 0
+        
+        while True:
+            # Fetch a page of fighters
+            response = supabase.table('fighters') \
+                .select('fighter_name') \
+                .range(page * page_size, (page + 1) * page_size - 1) \
+                .execute()
+            
+            # Add fighters to our list
+            fighters_page = response.data
+            all_fighters.extend(fighters_page)
+            
+            # If we got fewer results than the page size, we've reached the end
+            if len(fighters_page) < page_size:
+                break
+                
+            # Move to next page
+            page += 1
+        
+        print(f"[INFO] Found {len(all_fighters)} fighters in the database to process.")
+        
+        # Process in batches
+        batch_size = 50
+        success_count = 0
+        
+        for i in range(0, len(all_fighters), batch_size):
+            batch = all_fighters[i:i+batch_size]
+            for fighter in batch:
+                fighter_name = fighter['fighter_name']
+                try:
+                    # Update fighter record
+                    response = supabase.table('fighters') \
+                        .update({'image_url': STICKMAN_URL}) \
+                        .eq('fighter_name', fighter_name) \
+                        .execute()
+                    
+                    if response.data:
+                        success_count += 1
+                except Exception as e:
+                    print(f"[ERROR] Failed to update {fighter_name}: {str(e)}")
+            
+            print(f"[INFO] Processed {min(i + batch_size, len(all_fighters))}/{len(all_fighters)} fighters...")
+        
+        print(f"[DONE] Successfully updated image URLs for {success_count} fighters with stickman placeholder")
+    except Exception as e:
+        print(f"[ERROR] Failed to update image URLs: {str(e)}")
 
 if __name__ == "__main__":
     update_image_urls()

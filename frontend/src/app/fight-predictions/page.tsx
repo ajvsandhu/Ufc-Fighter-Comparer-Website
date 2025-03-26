@@ -38,6 +38,11 @@ interface Prediction {
   prediction_confidence: number;
   model_version: string;
   model_accuracy: string;
+  model?: {
+    version: string;
+    accuracy: string;
+    status: string;
+  };
   head_to_head: {
     fighter1_wins?: number;
     fighter2_wins?: number;
@@ -49,12 +54,14 @@ interface Prediction {
     record: string;
     image_url: string;
     probability: number;
+    win_probability: string;
   };
   fighter2: {
     name: string;
     record: string;
     image_url: string;
     probability: number;
+    win_probability: string;
   };
   analysis?: string;
 }
@@ -154,20 +161,8 @@ export default function FightPredictionsPage() {
 
       const data = await response.json();
       
-      // Process the prediction data to include probabilities with the fighter data
-      const processedData = {
-        ...data,
-        fighter1: {
-          ...data.fighter1,
-          probability: data.fighter1.name === data.winner ? data.winner_probability : data.loser_probability
-        },
-        fighter2: {
-          ...data.fighter2,
-          probability: data.fighter2.name === data.winner ? data.winner_probability : data.loser_probability
-        }
-      };
-
-      setPrediction(processedData);
+      // Just use the response as-is - the backend now provides properly formatted win probabilities
+      setPrediction(data);
       setShowPredictionModal(true);
     } catch (error) {
       console.error('Error getting prediction:', error);
@@ -228,7 +223,7 @@ export default function FightPredictionsPage() {
                   <div className="text-center space-y-2">
                     <h4 className="text-xl font-bold">{prediction.fighter1.name}</h4>
                     <div className={`text-lg font-medium ${prediction.fighter1.name === prediction.winner ? 'text-green-500' : 'text-red-500'}`}>
-                      {(prediction.fighter1.probability * 100).toFixed(1)}%
+                      {prediction.fighter1.win_probability}
                     </div>
                     <p className="text-sm text-muted-foreground">{prediction.fighter1.record}</p>
                   </div>
@@ -238,7 +233,7 @@ export default function FightPredictionsPage() {
                   <div className="text-center space-y-2">
                     <h4 className="text-xl font-bold">{prediction.fighter2.name}</h4>
                     <div className={`text-lg font-medium ${prediction.fighter2.name === prediction.winner ? 'text-green-500' : 'text-red-500'}`}>
-                      {(prediction.fighter2.probability * 100).toFixed(1)}%
+                      {prediction.fighter2.win_probability}
                     </div>
                     <p className="text-sm text-muted-foreground">{prediction.fighter2.record}</p>
                   </div>
@@ -248,24 +243,18 @@ export default function FightPredictionsPage() {
                 <div className="relative">
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-accent/30 to-transparent" />
                   <div className="relative text-center py-4">
-                    <h4 className="text-2xl font-bold text-primary">
-                      {prediction.winner}
-                    </h4>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Predicted Winner
-                    </p>
+                    <h4 className="text-xl font-bold">{prediction.winner}</h4>
+                    <p className="text-primary">Predicted Winner</p>
                   </div>
                 </div>
 
-                {/* Analysis Section */}
-                {prediction.analysis && (
-                  <div className="bg-accent/5 rounded-xl p-6">
-                    <h4 className="font-semibold text-primary mb-4">Fight Analysis</h4>
-                    <p className="text-sm text-muted-foreground whitespace-pre-line">
-                      {prediction.analysis}
-                    </p>
-                  </div>
-                )}
+                {/* Fight Analysis */}
+                <div className="space-y-2">
+                  <h5 className="text-lg font-semibold">Fight Analysis</h5>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {prediction.analysis || "No detailed analysis available for this matchup."}
+                  </p>
+                </div>
 
                 {/* Head to Head */}
                 {prediction.head_to_head && (prediction.head_to_head.fighter1_wins || prediction.head_to_head.fighter2_wins) && (
@@ -285,9 +274,9 @@ export default function FightPredictionsPage() {
                 )}
 
                 {/* Model Info */}
-                <div className="flex justify-between items-center text-xs text-muted-foreground pt-4 border-t border-border/50">
-                  <div>Model Version: {prediction.model_version}</div>
-                  <div>Model Accuracy: {prediction.model_accuracy}</div>
+                <div className="flex justify-between items-center text-xs text-muted-foreground border-t border-border pt-4">
+                  <div>Model Version: {prediction.model?.version || prediction.model_version || "1.0"}</div>
+                  <div>Model Accuracy: {prediction.model?.accuracy || prediction.model_accuracy || "N/A"}</div>
                 </div>
 
                 {/* Note */}

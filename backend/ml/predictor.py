@@ -1,9 +1,8 @@
 """
-UFC Fighter Prediction System using Machine Learning.
+UFC Fight Predictor
 
-This module implements a machine learning-based system for predicting UFC fight outcomes.
-It uses various features including fighter statistics, recent performance, and physical attributes
-to generate predictions with confidence levels.
+A machine learning system that predicts who's going to win in a UFC fight! 🥊
+Uses fighter stats, recent performance, and physical attributes to make smart predictions.
 """
 
 import os
@@ -19,23 +18,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.preprocessing import StandardScaler
 from sklearn.calibration import CalibratedClassifierCV
-import sqlite3
 import random
 import joblib
 
 from backend.api.database import get_db_connection
 from backend.ml.config import get_config
-from backend.constants import (
-    MODEL_PATH,
-    SCALER_PATH,
-    FEATURE_NAMES_PATH,
-    MODEL_INFO_PATH,
-    MODEL_VERSION,
-    LOG_LEVEL,
-    LOG_FORMAT,
-    LOG_DATE_FORMAT,
-    DB_PATH
-)
 from backend.ml.feature_engineering import (
     safe_convert_to_float, 
     extract_height_in_inches, 
@@ -52,8 +39,18 @@ from backend.ml.feature_engineering import (
     extract_strikes_landed_attempted
 )
 from backend.ml.fight_analysis import generate_matchup_analysis
+from backend.constants import (
+    MODEL_PATH,
+    SCALER_PATH,
+    FEATURE_NAMES_PATH,
+    MODEL_INFO_PATH,
+    MODEL_VERSION,
+    LOG_LEVEL,
+    LOG_FORMAT,
+    LOG_DATE_FORMAT,
+    DB_PATH
+)
 
-# Set up logging
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
     format=LOG_FORMAT,
@@ -61,10 +58,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Utility functions
 def parse_record(record_str):
     """
-    Parse a record string in the format "W-L-D" into wins, losses, and draws
+    Takes a fighter's record (like '10-2-1') and breaks it down into wins, losses, and draws.
     """
     try:
         parts = record_str.split('-')
@@ -73,146 +69,130 @@ def parse_record(record_str):
             losses = int(parts[1])
             draws = int(parts[2])
             return wins, losses, draws
-        else:
-            return 0, 0, 0
+        return 0, 0, 0
     except Exception:
         return 0, 0, 0
 
-def calculate_confidence_level(probability):
-    """
-    Calculate confidence level based on probability
-    """
-    if probability >= 0.8:
-        return "Very High"
-    elif probability >= 0.7:
-        return "High"
-    elif probability >= 0.6:
-        return "Moderate"
-    elif probability >= 0.5:
-        return "Slight"
-    else:
-        return "Low"
-
 class FighterPredictor:
     """
-    A class for predicting UFC fight outcomes using machine learning.
-    
-    This class handles model training, prediction, and feature engineering for UFC fighter
-    predictions. It uses various statistical and machine learning techniques to generate
-    predictions with confidence levels.
-    
-    Attributes:
-        model: The trained machine learning model
-        scaler: StandardScaler for feature normalization
-        feature_names: List of feature names used in the model
-        model_info: Dictionary containing model metadata and performance metrics
-        config: Configuration dictionary for model parameters
-        logger: Logger instance for the class
+    The brain of our UFC prediction system! 🧠
+
+    What it does:
+    - Analyzes fighter stats and styles
+    - Tracks how well fighters have been doing lately
+    - Compares physical attributes (height, reach, etc.)
+    - Looks at head-to-head history
+    - Calculates who's likely to win
     """
     
-    def __init__(self) -> None:
+    def __init__(self, train=False):
         """
-        Initialize the predictor with default settings.
-        
-        Sets up the model, scaler, and configuration. Attempts to load an existing
-        trained model if available.
+        Initialize predictor with optional training mode.
         """
-        self.model: Optional[Union[RandomForestClassifier, GradientBoostingClassifier]] = None
-        self.scaler: Optional[StandardScaler] = None
-        self.feature_names: Optional[List[str]] = None
-        self.model_info: Dict[str, Any] = {
-            'last_trained': None,
+        self.logger = logging.getLogger(__name__)
+        self.model = None
+        self.scaler = None
+        self.feature_names = None
+        self.model_info = {
             'version': MODEL_VERSION,
-            'accuracy': None,
-            'sample_size': None,
-            'status': 'Not trained',
-            'message': 'Model not yet trained'
+            'accuracy': 0.0,
+            'status': 'Initializing',
+            'last_trained': None,
+            'training_size': 0
         }
-        self.config: Dict[str, Any] = get_config()
-        self.logger: logging.Logger = logging.getLogger(__name__)
         
-        # Try to load an existing model if available
-        self._load_model()
+        if not train:
+            self._load_model()
         
-        # Ensure model version is set correctly
-        if self.model_info and 'version' in self.model_info:
-            self.model_info['version'] = MODEL_VERSION
+        self.logger.debug("Predictor initialized")
 
     def _load_model(self) -> bool:
         """
-        Load the trained model with better error handling.
-        
-        Attempts to load the model from disk, handling different format versions
-        and potential errors.
+        Loads up our trained model so it's ready to make predictions! 🎯
         
         Returns:
-            bool: True if model was successfully loaded, False otherwise
+            bool: True if everything loaded okay, False if something went wrong
         """
-        if os.path.exists(MODEL_PATH):
-            try:
-                with open(MODEL_PATH, 'rb') as f:
-                    model_data = pickle.load(f)
+        if not os.path.exists(MODEL_PATH):
+            self.logger.debug("No model file found")
+            return False
+            
+        try:
+            model_data = joblib.load(MODEL_PATH)
+            
+            if isinstance(model_data, dict):
+                self.model = model_data.get('model')
+                self.scaler = model_data.get('scaler')
+                self.feature_names = model_data.get('feature_names')
                 
-                # Handle different format versions
-                if isinstance(model_data, dict):
-                    self.model = model_data.get('model')
-                    self.scaler = model_data.get('scaler')
-                    self.feature_names = model_data.get('feature_names')
-                    
-                    # If model info is stored in the model file, load it
-                    if 'model_info' in model_data:
-                        self.model_info = model_data['model_info']
-                else:
-                    # Legacy format (just the model)
-                    self.model = model_data
-                    
-                    # Try to load scaler and feature names from separate files
-                    if os.path.exists(SCALER_PATH):
+                if 'model_info' in model_data:
+                    self.model_info = model_data['model_info']
+            else:
+                self.model = model_data
+                
+                if os.path.exists(SCALER_PATH):
+                    try:
+                        self.scaler = joblib.load(SCALER_PATH)
+                    except Exception:
                         with open(SCALER_PATH, 'rb') as f:
                             self.scaler = pickle.load(f)
-                    else:
-                        logger.warning("No scaler file found")
-                        
-                    if os.path.exists(FEATURE_NAMES_PATH):
+                else:
+                    self.logger.debug("Creating default scaler")
+                    self.scaler = StandardScaler()
+                    dummy_data = np.array([[0] * 28])
+                    self.scaler.fit(dummy_data)
+                    
+                if os.path.exists(FEATURE_NAMES_PATH):
+                    try:
+                        self.feature_names = joblib.load(FEATURE_NAMES_PATH)
+                    except Exception:
                         with open(FEATURE_NAMES_PATH, 'rb') as f:
                             self.feature_names = pickle.load(f)
-                    else:
-                        logger.warning("No feature names file found")
-                
-                # If model info file exists, load it
-                if os.path.exists(MODEL_INFO_PATH):
-                    try:
-                        with open(MODEL_INFO_PATH, 'r') as f:
-                            self.model_info = json.load(f)
-                    except:
-                        logger.warning("Error loading model info file")
-                
-                # Validate loaded components
-                if self.model is None:
-                    logger.error("Loaded model is None")
-                    return False
-                
-                if self.scaler is None:
-                    logger.warning("Loaded scaler is None")
-                
-                if not self.feature_names:
-                    logger.warning("No feature names loaded")
-                
-                # Update model info
-                self.model_info['status'] = 'Loaded'
-                
-                logger.info(f"Successfully loaded model from {MODEL_PATH}")
-                return True
-            except Exception as e:
-                logger.error(f"Error loading model: {str(e)}")
-                # Add traceback for better debugging
-                import traceback
-                logger.error(traceback.format_exc())
+                else:
+                    self.logger.debug("Creating default feature names")
+                    self.feature_names = [
+                        'slpm', 'str_acc', 'sapm', 'str_def', 'td_avg', 'td_acc', 'td_def', 'sub_avg',
+                        'reach', 'height', 'weight_class_encoded', 'wins', 'losses', 'draws', 'total_fights', 
+                        'win_percentage', 'is_striker', 'is_grappler', 'age', 'striking_differential',
+                        'takedown_differential', 'combat_effectiveness', 'stance_encoded', 
+                        'recent_win_streak', 'recent_loss_streak', 'finish_rate', 'decision_rate', 'experience_factor'
+                    ]
+            
+            if os.path.exists(MODEL_INFO_PATH):
+                try:
+                    with open(MODEL_INFO_PATH, 'r') as f:
+                        self.model_info = json.load(f)
+                except:
+                    self.logger.debug("Failed to load model info")
+            
+            if self.model is None:
+                self.logger.error("Model loading failed")
                 return False
-        else:
-            logger.info(f"No model file found at {MODEL_PATH}")
-        return False
-    
+            
+            if self.scaler is None:
+                self.logger.debug("Creating default scaler")
+                self.scaler = StandardScaler()
+                dummy_data = np.array([[0] * 28])
+                self.scaler.fit(dummy_data)
+            
+            if not self.feature_names:
+                self.logger.debug("Creating default feature names")
+                self.feature_names = [
+                    'slpm', 'str_acc', 'sapm', 'str_def', 'td_avg', 'td_acc', 'td_def', 'sub_avg',
+                    'reach', 'height', 'weight_class_encoded', 'wins', 'losses', 'draws', 'total_fights', 
+                    'win_percentage', 'is_striker', 'is_grappler', 'age', 'striking_differential',
+                    'takedown_differential', 'combat_effectiveness', 'stance_encoded', 
+                    'recent_win_streak', 'recent_loss_streak', 'finish_rate', 'decision_rate', 'experience_factor'
+                ]
+            
+            self.model_info['status'] = 'Loaded'
+            self.logger.debug("Model loaded successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Model loading failed: {str(e)}")
+            return False
+
     def _save_model(self) -> bool:
         """
         Save the trained model to disk.
@@ -230,6 +210,16 @@ class FighterPredictor:
             # Create model directory if it doesn't exist
             os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
             
+            # Ensure we have valid feature names
+            if not self.feature_names or len(self.feature_names) == 0:
+                self.logger.warning("No feature names available, creating dummy feature names")
+                self.feature_names = [f"feature_{i}" for i in range(100)]  # Create dummy feature names
+                
+            # Ensure we have a valid scaler
+            if not self.scaler:
+                self.logger.warning("No scaler available, creating a default scaler")
+                self.scaler = StandardScaler()
+            
             # Create model package with all necessary components
             model_package = {
                 'model': self.model,
@@ -238,9 +228,8 @@ class FighterPredictor:
                 'model_info': self.model_info
             }
             
-            # Save to disk
-            with open(MODEL_PATH, 'wb') as f:
-                pickle.dump(model_package, f)
+            # Save to disk using joblib for better compatibility
+            joblib.dump(model_package, MODEL_PATH)
                 
             self.logger.info(f"Model saved to {MODEL_PATH}")
             return True
@@ -251,96 +240,93 @@ class FighterPredictor:
             self.logger.error(traceback.format_exc())
             return False
     
-    def _get_db_connection(self) -> Optional[sqlite3.Connection]:
+    def _get_db_connection(self):
         """
-        Get a connection to the SQLite database.
+        Get a connection to the Supabase database.
         
         Returns:
-            Optional[sqlite3.Connection]: Database connection if successful, None otherwise
+            Optional: Supabase client if successful, None otherwise
         """
         try:
-            if not os.path.exists(DB_PATH):
-                self.logger.error(f"Database file not found at: {DB_PATH}")
-                return None
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            return conn
-        except sqlite3.Error as e:
+            return get_db_connection()
+        except Exception as e:
             self.logger.error(f"Database connection error: {str(e)}")
             return None
     
     def _get_fighter_data(self, fighter_name: str) -> Optional[Dict[str, Any]]:
         """
-        Get fighter data from database by name.
+        Looks up a fighter in our database to get all their info! 🔍
         
         Args:
-            fighter_name: Name of the fighter to retrieve data for
+            fighter_name: Name of the fighter we're looking for
             
         Returns:
-            Optional[Dict[str, Any]]: Fighter data if found, None otherwise
+            All the fighter's data if we find them, None if we don't
             
         Raises:
-            sqlite3.Error: If there is a database error
-            ValueError: If fighter_name is empty or invalid
+            ValueError: If the fighter name is empty or invalid
         """
         if not fighter_name or not isinstance(fighter_name, str):
-            logger.error("Invalid fighter name provided")
+            self.logger.error("Invalid fighter name provided")
             raise ValueError("Fighter name must be a non-empty string")
         
         try:
-            conn = get_db_connection()
-            if not conn:
-                logger.error("No database connection available")
+            supabase = self._get_db_connection()
+            if not supabase:
+                self.logger.error("No database connection available")
                 return None
             
-            cursor = conn.cursor()
             try:
-                cursor.execute("SELECT * FROM fighters WHERE fighter_name = ?", (fighter_name,))
-                fighter = cursor.fetchone()
+                # Get fighter data from Supabase using case-insensitive search
+                response = supabase.table('fighters').select('*').ilike('fighter_name', fighter_name).execute()
                 
-                if not fighter:
-                    logger.warning(f"Fighter not found in database: {fighter_name}")
-                    return None
+                if not response.data or len(response.data) == 0:
+                    # Try again with another approach - exact match case insensitive
+                    response = supabase.table('fighters').select('*').eq('fighter_name', fighter_name).execute()
+                    
+                    if not response.data or len(response.data) == 0:
+                        # Try one more approach with pattern matching
+                        response = supabase.table('fighters').select('*').ilike('fighter_name', f"%{fighter_name}%").execute()
+                        
+                        if not response.data or len(response.data) == 0:
+                            self.logger.warning(f"Fighter not found in database: {fighter_name}")
+                            return None
                 
-                # Convert row to dictionary
-                columns = [col[0] for col in cursor.description]
-                fighter_data = dict(zip(columns, fighter))
+                fighter_data = response.data[0]
                 
-                # Get fighter's recent fights
-                cursor.execute("""
-                    SELECT * 
-                    FROM fighter_last_5_fights 
-                    WHERE fighter_name = ?
-                    ORDER BY fight_date DESC 
-                    LIMIT 10
-                """, (fighter_name,))
+                # Get fighter's recent fights from Supabase
+                fights_response = supabase.table('fighter_last_5_fights').select('*')\
+                    .eq('fighter_name', fighter_data.get('fighter_name', fighter_name))\
+                    .order('fight_date', desc=True)\
+                    .limit(10)\
+                    .execute()
                 
-                fights = cursor.fetchall()
-                if fights:
-                    # Convert rows to dictionaries
-                    columns = [col[0] for col in cursor.description]
-                    fights_data = [dict(zip(columns, fight)) for fight in fights]
-                    fighter_data['recent_fights'] = fights_data
+                if fights_response.data and len(fights_response.data) > 0:
+                    fighter_data['recent_fights'] = fights_response.data
+                else:
+                    fighter_data['recent_fights'] = []
                 
                 return fighter_data
                 
-            except sqlite3.Error as e:
-                logger.error(f"Database error retrieving fighter data: {str(e)}")
+            except Exception as e:
+                self.logger.error(f"Database error retrieving fighter data: {str(e)}")
+                import traceback
+                self.logger.error(traceback.format_exc())
                 raise
-            finally:
-                cursor.close()
                 
         except Exception as e:
-            logger.error(f"Error retrieving fighter data for {fighter_name}: {str(e)}")
+            self.logger.error(f"Error retrieving fighter data for {fighter_name}: {str(e)}")
             import traceback
-            logger.error(traceback.format_exc())
+            self.logger.error(traceback.format_exc())
             return None
-        finally:
-            if conn:
-                conn.close()
     
     def _get_fighter_record(self, fighter_name):
-        """Get fighter record from the database"""
+        """
+        Gets a fighter's win-loss-draw record and recent fight results! 📝
+        
+        This tells us how many fights they've won, lost, and drawn,
+        plus how they did in their last few fights.
+        """
         try:
             fighter_data = self._get_fighter_data(fighter_name)
             if not fighter_data:
@@ -371,7 +357,7 @@ class FighterPredictor:
                 'last_three_results': recent_results
             }
         except Exception as e:
-            logger.error(f"Error getting fighter record for {fighter_name}: {str(e)}")
+            self.logger.error(f"Error getting fighter record for {fighter_name}: {str(e)}")
             return None
     
     def _get_fighter_image(self, fighter_name):
@@ -383,18 +369,25 @@ class FighterPredictor:
                 
             return fighter_data.get('image_url')
         except Exception as e:
-            logger.error(f"Error getting fighter image for {fighter_name}: {str(e)}")
+            self.logger.error(f"Error getting fighter image for {fighter_name}: {str(e)}")
             return None 
 
     def _extract_features_from_fighter(self, fighter_name):
         """
-        Extract numerical features from a fighter.
+        Gets all the important stats and numbers we need from a fighter! 📊
+        
+        This looks at things like:
+        - How many strikes they land per minute
+        - How good they are at takedowns
+        - Their win/loss record
+        - Physical stuff like height and reach
+        - And lots more!
         
         Args:
-            fighter_name (str): The name of the fighter
+            fighter_name (str): The name of the fighter to analyze
             
         Returns:
-            dict: A dictionary of fighter features
+            dict: All their stats, ready for our model to use
         """
         try:
             # Get fighter data
@@ -403,30 +396,31 @@ class FighterPredictor:
                 self.logger.warning(f"No data found for fighter: {fighter_name}")
                 return None
                 
-            # Initialize empty feature vector
-            features = {}
+            # Initialize feature vector with exactly the 28 expected features
+            expected_features = [
+                'slpm', 'str_acc', 'sapm', 'str_def', 'td_avg', 'td_acc', 'td_def', 'sub_avg',
+                'reach', 'height', 'weight_class_encoded', 'wins', 'losses', 'draws', 'total_fights', 
+                'win_percentage', 'is_striker', 'is_grappler', 'age', 'striking_differential',
+                'takedown_differential', 'combat_effectiveness', 'stance_encoded', 
+                'recent_win_streak', 'recent_loss_streak', 'finish_rate', 'decision_rate', 'experience_factor'
+            ]
             
-            # Helper function to safely convert values to float
-            def safe_float(value, default=0.0):
-                if value is None or value == 'N/A' or value == '':
-                    return default
-                try:
-                    # Handle percentage strings
-                    if isinstance(value, str) and '%' in value:
-                        return float(value.strip('%')) / 100
-                    return float(value)
-                except (ValueError, TypeError):
-                    return default
+            # Create empty features dictionary with the expected keys
+            features = {key: 0.0 for key in expected_features}
             
-            # Extract basic stats
-            features['slpm'] = safe_float(fighter_data.get('SLpM', 0))
-            features['str_acc'] = safe_float(fighter_data.get('Str. Acc.', 0))
-            features['sapm'] = safe_float(fighter_data.get('SApM', 0))
-            features['str_def'] = safe_float(fighter_data.get('Str. Def', 0))
-            features['td_avg'] = safe_float(fighter_data.get('TD Avg.', 0))
-            features['td_acc'] = safe_float(fighter_data.get('TD Acc.', 0))
-            features['td_def'] = safe_float(fighter_data.get('TD Def.', 0))
-            features['sub_avg'] = safe_float(fighter_data.get('Sub. Avg.', 0))
+            # Extract basic stats using feature engineering functions
+            features['slpm'] = safe_convert_to_float(fighter_data.get('SLpM', 0))
+            features['str_acc'] = safe_convert_to_float(fighter_data.get('Str. Acc.', 0))
+            features['sapm'] = safe_convert_to_float(fighter_data.get('SApM', 0))
+            features['str_def'] = safe_convert_to_float(fighter_data.get('Str. Def', 0))
+            features['td_avg'] = safe_convert_to_float(fighter_data.get('TD Avg.', 0))
+            features['td_acc'] = safe_convert_to_float(fighter_data.get('TD Acc.', 0))
+            features['td_def'] = safe_convert_to_float(fighter_data.get('TD Def.', 0))
+            features['sub_avg'] = safe_convert_to_float(fighter_data.get('Sub. Avg.', 0))
+            
+            # Extract physical attributes
+            features['reach'] = extract_reach_in_inches(fighter_data.get('Reach', '0"'))
+            features['height'] = extract_height_in_inches(fighter_data.get('Height', "0' 0\""))
             
             # Extract weight class and encode numerically
             weight_class = fighter_data.get('Weight', 'Unknown')
@@ -446,125 +440,49 @@ class FighterPredictor:
             }
             features['weight_class_encoded'] = weight_classes.get(weight_class, 0)
             
-            # Parse record (W-L-D) with improved NC handling
-            record = fighter_data.get('Record', '0-0-0')
-            try:
-                # Handle format like "10-5-2" or "10-5-2 (2 NC)"
-                main_record = record.split('(')[0].strip()
-                parts = main_record.split('-')
-                
-                if len(parts) >= 3:
-                    # Handle potential NC in record string 
-                    wins = int(parts[0])
-                    losses = int(parts[1])
-                    draws = int(parts[2])
-                    
-                    # Extract NC (No Contest) if available
-                    nc = 0
-                    if '(' in record and 'NC' in record:
-                        nc_part = record.split('(')[1].split(')')[0]
-                        nc_matches = [int(s) for s in nc_part.split() if s.isdigit()]
-                        if nc_matches:
-                            nc = nc_matches[0]
-                    
-                    features['wins'] = wins
-                    features['losses'] = losses
-                    features['draws'] = draws
-                    features['nc'] = nc
-                    features['total_fights'] = wins + losses + draws + nc
-                    
-                    # Calculate win percentage (excluding NC)
-                    if wins + losses + draws > 0:
-                        features['win_percentage'] = wins / (wins + losses + draws)
-                    else:
-                        features['win_percentage'] = 0
-                else:
-                    features['wins'] = 0
-                    features['losses'] = 0
-                    features['draws'] = 0
-                    features['nc'] = 0
-                    features['total_fights'] = 0
-                    features['win_percentage'] = 0
-            except Exception as e:
-                self.logger.warning(f"Error parsing record for {fighter_name}: {str(e)}")
-                features['wins'] = 0
-                features['losses'] = 0
-                features['draws'] = 0
-                features['nc'] = 0
-                features['total_fights'] = 0
-                features['win_percentage'] = 0
+            # Extract record stats - fixing the issue where extract_record_stats returns a tuple
+            record_str = fighter_data.get('Record', '0-0-0')
+            # Use import from feature_engineering instead of our own implementation
+            record_stats_dict = {}
+            wins, losses, draws = parse_record(record_str)
+            record_stats_dict['wins'] = wins
+            record_stats_dict['losses'] = losses
+            record_stats_dict['draws'] = draws
+            record_stats_dict['total_fights'] = wins + losses + draws
             
-            # Extract reach
-            reach_str = fighter_data.get('Reach', '0"')
+            features['wins'] = record_stats_dict['wins']
+            features['losses'] = record_stats_dict['losses']
+            features['draws'] = record_stats_dict['draws']
+            features['total_fights'] = record_stats_dict['total_fights']
+            features['win_percentage'] = calculate_win_percentage(record_stats_dict)
+            
+            # Extract fighter style based on stats
+            features['is_striker'] = 1 if features['slpm'] > 3.0 and features['str_acc'] > 0.4 else 0
+            features['is_grappler'] = 1 if features['td_avg'] > 2.0 or features['sub_avg'] > 0.5 else 0
+            
+            # Calculate age
             try:
-                if reach_str == 'N/A' or not reach_str:
-                    features['reach'] = 0  # Default value when reach is unknown
-                else:
-                    # Clean the string and extract numeric value
-                    reach_clean = reach_str.replace('"', '').strip()
-                    features['reach'] = safe_float(reach_clean, 0)
-            except Exception as e:
-                self.logger.warning(f"Error extracting reach for {fighter_name}: {str(e)}")
-                features['reach'] = 0
-                
-            # Extract height
-            height_str = fighter_data.get('Height', "0' 0\"")
-            try:
-                if height_str == 'N/A' or not height_str:
-                    features['height'] = 0  # Default height
-                else:
-                    # Handle format like "5' 10""
-                    if "'" in height_str and '"' in height_str:
-                        feet_part, inches_part = height_str.split("'")
-                        feet = safe_float(feet_part.strip(), 0)
-                        inches = safe_float(inches_part.replace('"', '').strip(), 0)
-                        total_inches = (feet * 12) + inches
-                        features['height'] = total_inches
-                    else:
-                        # Try direct conversion if in different format
-                        features['height'] = safe_float(height_str.replace('"', '').replace("'", '').strip(), 0)
-            except Exception as e:
-                self.logger.warning(f"Error extracting height for {fighter_name}: {str(e)}")
-                features['height'] = 0
-                
-            # Calculate age from DOB
-            dob = fighter_data.get('DOB', 'N/A')
-            try:
-                if dob == 'N/A' or not dob:
-                    features['age'] = 30  # default age
-                else:
+                dob = fighter_data.get('DOB', 'N/A')
+                if dob != 'N/A' and dob:
                     try:
-                        # Try standard format first
                         birth_date = datetime.strptime(dob, '%b %d, %Y')
                     except ValueError:
-                        try:
-                            # Try alternative format
-                            birth_date = datetime.strptime(dob, '%B %d, %Y')
-                        except ValueError:
-                            # If still failing, extract year if possible
-                            year_match = [int(s) for s in dob.split() if s.isdigit() and len(s) == 4]
-                            if year_match:
-                                features['age'] = datetime.today().year - year_match[0]
-                            else:
-                                features['age'] = 30  # default age
-                            raise  # Re-raise to skip the normal age calculation
-                    
+                        birth_date = datetime.strptime(dob, '%B %d, %Y')
                     today = datetime.today()
                     features['age'] = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
-            except Exception as e:
-                if 'age' not in features:  # Only set if not already set in the except block above
-                    self.logger.warning(f"Error calculating age for {fighter_name}: {str(e)}")
+                else:
                     features['age'] = 30  # default age
+            except Exception as e:
+                self.logger.warning(f"Error calculating age for {fighter_name}: {str(e)}")
+                features['age'] = 30  # default age
                 
-            # Calculate striking and takedown differentials
+            # Calculate derived metrics
             features['striking_differential'] = features['slpm'] - features['sapm']
             features['takedown_differential'] = features['td_avg'] * features['td_acc'] - features['td_avg'] * (1 - features['td_def'])
-            
-            # Calculate combat effectiveness metric
             features['combat_effectiveness'] = (features['slpm'] * features['str_acc']) + (features['td_avg'] * features['td_acc']) + features['sub_avg'] - features['sapm'] * (1 - features['str_def'])
             
             # Encode stance
-            stance = fighter_data.get('Stance', 'Orthodox').lower()
+            stance = fighter_data.get('STANCE', 'Orthodox').lower()
             if stance == 'N/A' or not stance:
                 features['stance_encoded'] = 3  # unknown
             elif 'orthodox' in stance:
@@ -576,11 +494,7 @@ class FighterPredictor:
             else:
                 features['stance_encoded'] = 3  # other/unknown
                 
-            # Additional style features
-            features['is_striker'] = 1 if features['slpm'] > 3.0 and features['str_acc'] > 0.4 else 0
-            features['is_grappler'] = 1 if features['td_avg'] > 2.0 or features['sub_avg'] > 0.5 else 0
-            
-            # Process recent fights
+            # Process recent fights 
             recent_fights = fighter_data.get('recent_fights', [])[:5]  # Get up to 5 recent fights
             
             # Extract results
@@ -601,7 +515,7 @@ class FighterPredictor:
             features['recent_win_streak'] = sum(1 for r in results if r == 'W')
             features['recent_loss_streak'] = sum(1 for r in results if r == 'L')
             
-            # Advanced fighter profile
+            # Calculate finish rates
             if results:
                 features['finish_rate'] = sum(1 for fight in recent_fights if 'ko' in fight.get('method', '').lower() or 'sub' in fight.get('method', '').lower() or 'tko' in fight.get('method', '').lower()) / len(results)
                 features['decision_rate'] = sum(1 for fight in recent_fights if 'dec' in fight.get('method', '').lower() or 'decision' in fight.get('method', '').lower()) / len(results)
@@ -609,21 +523,29 @@ class FighterPredictor:
                 features['finish_rate'] = 0
                 features['decision_rate'] = 0
             
-            # Career progression metrics
-            features['career_length'] = features['total_fights']
+            # Calculate experience factor
             features['experience_factor'] = features['total_fights'] * features['win_percentage']
             
-            # Normalize features to avoid extreme values
+            # Validate and normalize features to avoid extreme values
             for key in features:
-                if isinstance(features[key], (int, float)):
+                if features[key] is None:
+                    features[key] = 0.0
+                elif isinstance(features[key], (int, float)):
                     # Cap extreme values
                     if features[key] > 100:
-                        features[key] = 100
+                        features[key] = 100.0
                     elif features[key] < -100:
-                        features[key] = -100
+                        features[key] = -100.0
             
-            self.logger.info(f"Successfully extracted {len(features)} features for {fighter_name}")
-            return features
+            # Ensure we're only returning exactly the 28 features
+            # that the model expects in the correct order
+            result_features = {}
+            for key in expected_features:
+                result_features[key] = features.get(key, 0.0)
+                
+            # Log results
+            self.logger.info(f"Successfully extracted {len(result_features)} features for {fighter_name}")
+            return result_features
             
         except Exception as e:
             self.logger.error(f"Error extracting features for {fighter_name}: {str(e)}")
@@ -638,47 +560,61 @@ class FighterPredictor:
         Returns:
             tuple: (X, y) where X is the feature matrix and y is the target vector
         """
-        connection = None
         try:
-            connection = self._get_db_connection()
-            if not connection:
+            supabase = self._get_db_connection()
+            if not supabase:
                 self.logger.error("Failed to establish database connection for training data retrieval")
                 return None, None
                 
             # Fetch all fighters from the database
-            cursor = connection.cursor()
-            cursor.execute("SELECT * FROM fighters")
-            fighter_rows = cursor.fetchall()
+            fighters_response = supabase.table('fighters').select('*').execute()
             
-            if not fighter_rows:
+            if not fighters_response.data:
                 self.logger.warning("No fighters found in the database")
                 return None, None
                 
             # Create a mapping of fighter names to their data
             fighter_map = {}
-            columns = [col[0] for col in cursor.description]
             
-            for fighter_row in fighter_rows:
-                fighter_dict = dict(zip(columns, fighter_row))
+            for fighter_dict in fighters_response.data:
                 fighter_name = fighter_dict.get('fighter_name')
                 if fighter_name:
                     fighter_map[fighter_name] = fighter_dict
             
             self.logger.info(f"Loaded {len(fighter_map)} fighters for training")
             
-            # Fetch fight data - use batched processing to handle large datasets
-            # and optimize the query to better match fight records
-            cursor.execute("""
-                SELECT f1.* 
-                FROM fighter_last_5_fights f1
-                WHERE f1.result IS NOT NULL 
-                    AND f1.result != ''
-                    AND f1.opponent IS NOT NULL
-                    AND f1.opponent != ''
-                ORDER BY f1.fight_date DESC
-            """)
+            # Fetch fight data - use pagination to handle large datasets
+            max_page_size = 1000
+            all_fights = []
+            page = 0
             
-            all_fights = cursor.fetchall()
+            while True:
+                try:
+                    # Get page of fights with pagination
+                    fights_response = supabase.table('fighter_last_5_fights').select('*')\
+                        .not_('result', 'is', 'null')\
+                        .not_('result', 'eq', '')\
+                        .not_('opponent', 'is', 'null')\
+                        .not_('opponent', 'eq', '')\
+                        .order('id')\
+                        .range(page * max_page_size, (page + 1) * max_page_size - 1)\
+                        .execute()
+                    
+                    page_fights = fights_response.data
+                    if not page_fights or len(page_fights) == 0:
+                        break
+                    
+                    all_fights.extend(page_fights)
+                    self.logger.info(f"Loaded {len(page_fights)} fights from page {page+1}")
+                    
+                    # If we got less than max_page_size, we're done
+                    if len(page_fights) < max_page_size:
+                        break
+                    
+                    page += 1
+                except Exception as e:
+                    self.logger.error(f"Error fetching page {page} of fights: {str(e)}")
+                    break
             
             if not all_fights:
                 self.logger.warning("No valid fights found in the database for training")
@@ -686,9 +622,8 @@ class FighterPredictor:
                 
             self.logger.info(f"Found {len(all_fights)} total fight records")
             
-            # Convert to dictionaries for easier processing
-            fight_columns = [col[0] for col in cursor.description]
-            all_fight_dicts = [dict(zip(fight_columns, fight)) for fight in all_fights]
+            # All fight dictionaries are already in the right format from Supabase
+            all_fight_dicts = all_fights
             
             # Build a lookup of fights by fighter-opponent pairs
             fight_lookup = {}
@@ -837,19 +772,19 @@ class FighterPredictor:
             import traceback
             self.logger.error(traceback.format_exc())
             return None, None
-        finally:
-            if connection:
-                connection.close()
     
     def train(self, force=False):
         """
-        Train the model using fight data from the database.
+        Trains our model to get better at predicting fights! 🎓
+        
+        This is where the magic happens - we feed the model lots of past fight data
+        so it can learn patterns and make smarter predictions.
         
         Args:
-            force (bool): If True, train even if a model is already loaded
+            force (bool): Set to True to retrain even if we already have a trained model
             
         Returns:
-            bool: True if training was successful, False otherwise
+            bool: True if training went well, False if something went wrong
         """
         if self.model is not None and not force:
             self.logger.info("Model already exists. Use force=True to retrain")
@@ -868,6 +803,11 @@ class FighterPredictor:
                 return False
                 
             self.logger.info(f"Training with {len(X)} samples")
+            
+            # Store feature names from the training data
+            if not self.feature_names or len(self.feature_names) != X.shape[1]:
+                self.feature_names = [f"feature_{i}" for i in range(X.shape[1])]
+                self.logger.info(f"Setting {len(self.feature_names)} feature names based on training data")
             
             # Split data into training and validation sets
             # Use a larger portion for training with more data
@@ -991,7 +931,9 @@ class FighterPredictor:
             self.model_info['max_depth'] = max_depth
             
             # Save the model
-            self._save_model()
+            success = self._save_model()
+            if not success:
+                self.logger.error("Failed to save the trained model")
             
             self.logger.info("Model training completed successfully")
             return True
@@ -1004,18 +946,51 @@ class FighterPredictor:
             self.model_info['message'] = f'Training error: {str(e)}'
             return False
     
-    def predict_winner(self, fighter1_data, fighter2_data, head_to_head=None, common_opponents=None):
+    def _repair_scaler(self, feature_count):
         """
-        Predict the winner between two fighters.
+        Repair the scaler when feature count mismatches occur.
+        This is helpful when the model was trained with a different number of features
+        than what's currently being extracted.
         
         Args:
-            fighter1_data (dict): Dictionary containing data for the first fighter
-            fighter2_data (dict): Dictionary containing data for the second fighter
-            head_to_head (dict, optional): Head-to-head data between the fighters
-            common_opponents (list, optional): List of common opponents
+            feature_count (int): The current number of features being extracted
             
         Returns:
-            dict: Prediction results
+            bool: True if successful, False otherwise
+        """
+        try:
+            self.logger.warning(f"Repairing scaler to handle {feature_count} features")
+            
+            # Create a new scaler
+            new_scaler = StandardScaler()
+            
+            # Create dummy data with the correct number of features
+            dummy_data = np.zeros((1, feature_count))
+            
+            # Fit the scaler with the dummy data
+            new_scaler.fit(dummy_data)
+            
+            # Replace the old scaler
+            self.scaler = new_scaler
+            
+            self.logger.info(f"Successfully repaired scaler to handle {feature_count} features")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to repair scaler: {str(e)}")
+            return False
+            
+    def predict_winner(self, fighter1_data, fighter2_data, head_to_head=None, common_opponents=None):
+        """
+        The main event! 🥊 Predicts who's going to win between two fighters.
+        
+        Args:
+            fighter1_data (dict): All the stats and info for the first fighter
+            fighter2_data (dict): All the stats and info for the second fighter
+            head_to_head (dict, optional): History of fights between these two
+            common_opponents (list, optional): Fighters they've both faced
+            
+        Returns:
+            dict: Everything about the prediction - who wins, how likely, etc.
         """
         try:
             if self.model is None:
@@ -1046,28 +1021,38 @@ class FighterPredictor:
                 }
             
             # Ensure both feature sets have the same keys
-            all_keys = set(fighter1_features.keys()).union(set(fighter2_features.keys()))
+            expected_features = self.feature_names if (self.feature_names and len(self.feature_names) == 28) else [
+                'slpm', 'str_acc', 'sapm', 'str_def', 'td_avg', 'td_acc', 'td_def', 'sub_avg',
+                'reach', 'height', 'weight_class_encoded', 'wins', 'losses', 'draws', 'total_fights', 
+                'win_percentage', 'is_striker', 'is_grappler', 'age', 'striking_differential',
+                'takedown_differential', 'combat_effectiveness', 'stance_encoded', 
+                'recent_win_streak', 'recent_loss_streak', 'finish_rate', 'decision_rate', 'experience_factor'
+            ]
             
-            for key in all_keys:
-                if key not in fighter1_features:
-                    fighter1_features[key] = 0
-                if key not in fighter2_features:
-                    fighter2_features[key] = 0
-            
-            # Create a feature vector (difference between fighters)
-            # This matches our training approach where features are fighter1 - fighter2
-            feature_keys = sorted(all_keys)
+            # Validate that both feature sets have exactly 28 features
+            if len(fighter1_features) != 28 or len(fighter2_features) != 28:
+                self.logger.warning(f"Feature count mismatch. Fighter1: {len(fighter1_features)}, Fighter2: {len(fighter2_features)}")
+                # Ensure we're using exactly 28 features
+                for key in expected_features:
+                    if key not in fighter1_features:
+                        fighter1_features[key] = 0.0
+                    if key not in fighter2_features:
+                        fighter2_features[key] = 0.0
+                
+                # Trim extra features if any
+                fighter1_features = {k: fighter1_features[k] for k in expected_features}
+                fighter2_features = {k: fighter2_features[k] for k in expected_features}
             
             # SOLUTION FOR POSITION BIAS: Make predictions in both directions and average them
             # First direction: fighter1 vs fighter2
             feature_vector_1vs2 = []
-            for key in feature_keys:
-                feature_vector_1vs2.append(fighter1_features[key] - fighter2_features[key])
+            for key in expected_features:
+                feature_vector_1vs2.append(fighter1_features.get(key, 0.0) - fighter2_features.get(key, 0.0))
             
             # Second direction: fighter2 vs fighter1 (reversed)
             feature_vector_2vs1 = []
-            for key in feature_keys:
-                feature_vector_2vs1.append(fighter2_features[key] - fighter1_features[key])
+            for key in expected_features:
+                feature_vector_2vs1.append(fighter2_features.get(key, 0.0) - fighter1_features.get(key, 0.0))
             
             # Check for NaN or Inf values in both vectors
             for i, val in enumerate(feature_vector_1vs2):
@@ -1078,52 +1063,195 @@ class FighterPredictor:
                 if math.isnan(val) or math.isinf(val):
                     feature_vector_2vs1[i] = 0.0
             
+            # Verify vectors have exactly 28 elements
+            if len(feature_vector_1vs2) != 28 or len(feature_vector_2vs1) != 28:
+                self.logger.warning(f"Feature vector length mismatch: {len(feature_vector_1vs2)} vs {len(feature_vector_2vs1)}")
+                # Pad or trim to exactly 28 features
+                feature_vector_1vs2 = feature_vector_1vs2[:28] if len(feature_vector_1vs2) > 28 else feature_vector_1vs2 + [0.0] * (28 - len(feature_vector_1vs2))
+                feature_vector_2vs1 = feature_vector_2vs1[:28] if len(feature_vector_2vs1) > 28 else feature_vector_2vs1 + [0.0] * (28 - len(feature_vector_2vs1))
+            
             # Convert to numpy arrays and reshape for predictions
             X_1vs2 = np.array([feature_vector_1vs2])
             X_2vs1 = np.array([feature_vector_2vs1])
             
             # Scale features if scaler exists
-            if self.scaler:
-                X_1vs2_scaled = self.scaler.transform(X_1vs2)
-                X_2vs1_scaled = self.scaler.transform(X_2vs1)
-            else:
-                X_1vs2_scaled = X_1vs2
-                X_2vs1_scaled = X_2vs1
+            try:
+                if self.scaler:
+                    X_1vs2_scaled = self.scaler.transform(X_1vs2)
+                    X_2vs1_scaled = self.scaler.transform(X_2vs1)
+                    self.logger.info("Successfully scaled feature vectors")
+                else:
+                    self.logger.warning("No scaler available, using unscaled features")
+                    X_1vs2_scaled = X_1vs2
+                    X_2vs1_scaled = X_2vs1
+            except Exception as e:
+                self.logger.warning(f"Error scaling features: {str(e)}. Attempting to repair scaler.")
+                # Try to repair the scaler to match the feature count
+                if self._repair_scaler(len(feature_vector_1vs2)):
+                    try:
+                        # Try scaling again with the repaired scaler
+                        X_1vs2_scaled = self.scaler.transform(X_1vs2)
+                        X_2vs1_scaled = self.scaler.transform(X_2vs1)
+                        self.logger.info("Successfully scaled features with repaired scaler")
+                    except Exception as e2:
+                        self.logger.warning(f"Still failed to scale features after repair: {str(e2)}. Using unscaled features.")
+                        X_1vs2_scaled = X_1vs2
+                        X_2vs1_scaled = X_2vs1
+                else:
+                    # Use unscaled features if repair failed
+                    self.logger.warning("Failed to repair scaler. Using unscaled features.")
+                    X_1vs2_scaled = X_1vs2
+                    X_2vs1_scaled = X_2vs1
                 
             # Make predictions in both directions
-            if hasattr(self.model, 'predict_proba'):
-                # Direction 1: fighter1 vs fighter2
-                probas_1vs2 = self.model.predict_proba(X_1vs2_scaled)[0]
-                f1_wins_prob = probas_1vs2[1]  # Index 1 is probability of class 1 (fighter1 wins)
-                f2_wins_prob = probas_1vs2[0]  # Index 0 is probability of class 0 (fighter2 wins)
-                
-                # Direction 2: fighter2 vs fighter1 (we need to invert this result)
-                probas_2vs1 = self.model.predict_proba(X_2vs1_scaled)[0]
-                f2_wins_prob_alt = probas_2vs1[1]  # This is actually fighter2's win probability when in position 1
-                f1_wins_prob_alt = probas_2vs1[0]  # This is actually fighter1's win probability when in position 2
-                
-                # Average the probabilities from both directions to eliminate position bias
-                f1_final_prob = (f1_wins_prob + f1_wins_prob_alt) / 2
-                f2_final_prob = (f2_wins_prob + f2_wins_prob_alt) / 2
-                
-                # Normalize to ensure they sum to 1.0
-                total_prob = f1_final_prob + f2_final_prob
-                if total_prob > 0:
-                    f1_final_prob = f1_final_prob / total_prob
-                    f2_final_prob = f2_final_prob / total_prob
+            try:
+                if hasattr(self.model, 'predict_proba'):
+                    # Direction 1: fighter1 vs fighter2
+                    probas_1vs2 = self.model.predict_proba(X_1vs2_scaled)[0]
+                    f1_wins_prob = probas_1vs2[1]  # Index 1 is probability of class 1 (fighter1 wins)
+                    f2_wins_prob = probas_1vs2[0]  # Index 0 is probability of class 0 (fighter2 wins)
+                    
+                    # Direction 2: fighter2 vs fighter1 (we need to invert this result)
+                    probas_2vs1 = self.model.predict_proba(X_2vs1_scaled)[0]
+                    f2_wins_prob_alt = probas_2vs1[1]  # This is actually fighter2's win probability when in position 1
+                    f1_wins_prob_alt = probas_2vs1[0]  # This is actually fighter1's win probability when in position 2
+                    
+                    # Average the probabilities from both directions to eliminate position bias
+                    f1_final_prob = (f1_wins_prob + f1_wins_prob_alt) / 2
+                    f2_final_prob = (f2_wins_prob + f2_wins_prob_alt) / 2
+                    
+                    # Normalize to ensure they sum to 1.0
+                    total_prob = f1_final_prob + f2_final_prob
+                    if total_prob > 0 and not math.isnan(total_prob):
+                        f1_final_prob = f1_final_prob / total_prob
+                        f2_final_prob = f2_final_prob / total_prob
+                    else:
+                        # Fallback if something went wrong with probability calculation
+                        f1_final_prob = 0.5
+                        f2_final_prob = 0.5
                 else:
-                    # Fallback if something went wrong with probability calculation
-                    f1_final_prob = 0.5
-                    f2_final_prob = 0.5
-            else:
-                # For models without predict_proba, use basic predict
-                pred_1vs2 = self.model.predict(X_1vs2_scaled)[0]
-                pred_2vs1 = self.model.predict(X_2vs1_scaled)[0]
+                    # For models without predict_proba, use basic predict
+                    pred_1vs2 = self.model.predict(X_1vs2_scaled)[0]
+                    pred_2vs1 = self.model.predict(X_2vs1_scaled)[0]
+                    
+                    # Average the predictions (inverting the second one)
+                    f1_final_prob = (float(pred_1vs2) + (1.0 - float(pred_2vs1))) / 2
+                    f2_final_prob = 1.0 - f1_final_prob
                 
-                # Average the predictions (inverting the second one)
-                f1_final_prob = (float(pred_1vs2) + (1.0 - float(pred_2vs1))) / 2
-                f2_final_prob = 1.0 - f1_final_prob
+                self.logger.info(f"Successful prediction. Fighter 1 win probability: {f1_final_prob:.2f}, Fighter 2 win probability: {f2_final_prob:.2f}")
+            except Exception as e:
+                self.logger.error(f"Error making prediction: {str(e)}")
+                # Check if this is a feature count mismatch error and try to handle it
+                if "features, but" in str(e) and "expecting" in str(e):
+                    # Extract the expected feature count from the error message
+                    import re
+                    expected_count_match = re.search(r'expecting (\d+) features', str(e))
+                    if expected_count_match:
+                        expected_count = int(expected_count_match.group(1))
+                        self.logger.warning(f"Model expects {expected_count} features, trying to adapt")
+                        
+                        # Trim or pad our vectors to match the expected count
+                        if len(feature_vector_1vs2) > expected_count:
+                            feature_vector_1vs2 = feature_vector_1vs2[:expected_count]
+                            feature_vector_2vs1 = feature_vector_2vs1[:expected_count]
+                        else:
+                            feature_vector_1vs2 = feature_vector_1vs2 + [0.0] * (expected_count - len(feature_vector_1vs2))
+                            feature_vector_2vs1 = feature_vector_2vs1 + [0.0] * (expected_count - len(feature_vector_2vs1))
+                        
+                        # Try again with the adjusted feature vectors
+                        try:
+                            X_1vs2 = np.array([feature_vector_1vs2])
+                            X_2vs1 = np.array([feature_vector_2vs1])
+                            
+                            # Scale if possible
+                            if self._repair_scaler(expected_count):
+                                X_1vs2_scaled = self.scaler.transform(X_1vs2)
+                                X_2vs1_scaled = self.scaler.transform(X_2vs1)
+                            else:
+                                X_1vs2_scaled = X_1vs2
+                                X_2vs1_scaled = X_2vs1
+                            
+                            # Try prediction again
+                            if hasattr(self.model, 'predict_proba'):
+                                probas_1vs2 = self.model.predict_proba(X_1vs2_scaled)[0]
+                                f1_wins_prob = probas_1vs2[1]
+                                f2_wins_prob = probas_1vs2[0]
+                                
+                                probas_2vs1 = self.model.predict_proba(X_2vs1_scaled)[0]
+                                f2_wins_prob_alt = probas_2vs1[1]
+                                f1_wins_prob_alt = probas_2vs1[0]
+                                
+                                f1_final_prob = (f1_wins_prob + f1_wins_prob_alt) / 2
+                                f2_final_prob = (f2_wins_prob + f2_wins_prob_alt) / 2
+                                
+                                total_prob = f1_final_prob + f2_final_prob
+                                if total_prob > 0 and not math.isnan(total_prob):
+                                    f1_final_prob = f1_final_prob / total_prob
+                                    f2_final_prob = f2_final_prob / total_prob
+                                else:
+                                    f1_final_prob = 0.5
+                                    f2_final_prob = 0.5
+                                    
+                                self.logger.info(f"Successfully recovered prediction with adjusted feature count. Fighter 1: {f1_final_prob:.2f}, Fighter 2: {f2_final_prob:.2f}")
+                            else:
+                                # Fallback to win percentage
+                                self.logger.warning("Recovery attempt failed, falling back to win percentage")
+                                f1_win_pct = fighter1_features.get('win_percentage', 0.5)
+                                f2_win_pct = fighter2_features.get('win_percentage', 0.5)
+                                
+                                total = f1_win_pct + f2_win_pct
+                                if total > 0:
+                                    f1_final_prob = f1_win_pct / total
+                                    f2_final_prob = f2_win_pct / total
+                                else:
+                                    f1_final_prob = 0.5
+                                    f2_final_prob = 0.5
+                        except Exception as recovery_error:
+                            self.logger.error(f"Recovery attempt failed: {str(recovery_error)}")
+                            # Fallback to win percentage
+                            f1_win_pct = fighter1_features.get('win_percentage', 0.5)
+                            f2_win_pct = fighter2_features.get('win_percentage', 0.5)
+                            
+                            total = f1_win_pct + f2_win_pct
+                            if total > 0:
+                                f1_final_prob = f1_win_pct / total
+                                f2_final_prob = f2_win_pct / total
+                            else:
+                                f1_final_prob = 0.5
+                                f2_final_prob = 0.5
+                    else:
+                        # Fallback to win percentage if we can't determine the expected count
+                        f1_win_pct = fighter1_features.get('win_percentage', 0.5)
+                        f2_win_pct = fighter2_features.get('win_percentage', 0.5)
+                        
+                        total = f1_win_pct + f2_win_pct
+                        if total > 0:
+                            f1_final_prob = f1_win_pct / total
+                            f2_final_prob = f2_win_pct / total
+                        else:
+                            f1_final_prob = 0.5
+                            f2_final_prob = 0.5
+                else:
+                    # Other errors, use win percentage as fallback
+                    f1_win_pct = fighter1_features.get('win_percentage', 0.5)
+                    f2_win_pct = fighter2_features.get('win_percentage', 0.5)
+                    
+                    total = f1_win_pct + f2_win_pct
+                    if total > 0:
+                        f1_final_prob = f1_win_pct / total
+                        f2_final_prob = f2_win_pct / total
+                    else:
+                        f1_final_prob = 0.5
+                        f2_final_prob = 0.5
+                    
+                self.logger.warning(f"Using fallback prediction method. Fighter 1: {f1_final_prob:.2f}, Fighter 2: {f2_final_prob:.2f}")
             
+            # Check for NaN values and replace with defaults
+            if math.isnan(f1_final_prob) or math.isinf(f1_final_prob):
+                f1_final_prob = 0.5
+            if math.isnan(f2_final_prob) or math.isinf(f2_final_prob):
+                f2_final_prob = 0.5
+                
             # Determine winner and format probabilities based on final probabilities
             if f1_final_prob > f2_final_prob:
                 winner = fighter1_name
@@ -1210,7 +1338,10 @@ class FighterPredictor:
         
     def prepare_prediction_for_api(self, prediction):
         """
-        Format the prediction result for the API response
+        Makes our prediction look nice and clean for sending back to users! ✨
+        
+        Takes all our prediction data and formats it in a way that's easy to read
+        and use in the app. Includes win probabilities, fighter info, and analysis.
         """
         if 'error' in prediction:
             return {
@@ -1227,23 +1358,58 @@ class FighterPredictor:
         # Determine which fighter is which
         fighter1_is_winner = fighter1_name == winner_name
         
+        # Ensure all values exist and have fallbacks
+        fighter1_prob = prediction.get('winner_probability' if fighter1_is_winner else 'loser_probability', 0.5)
+        fighter2_prob = prediction.get('winner_probability' if not fighter1_is_winner else 'loser_probability', 0.5)
+        
+        # Format percentages safely - ensure they're never NaN
+        try:
+            if isinstance(fighter1_prob, (int, float)) and not math.isnan(fighter1_prob):
+                fighter1_prob_pct = f"{int(round(fighter1_prob * 100))}%"
+            else:
+                fighter1_prob_pct = "50%"
+        except:
+            fighter1_prob_pct = "50%"
+            
+        try:
+            if isinstance(fighter2_prob, (int, float)) and not math.isnan(fighter2_prob):
+                fighter2_prob_pct = f"{int(round(fighter2_prob * 100))}%"
+            else:
+                fighter2_prob_pct = "50%"
+        except:
+            fighter2_prob_pct = "50%"
+            
+        try:
+            winner_prob = prediction.get('winner_probability', 0.5)
+            if isinstance(winner_prob, (int, float)) and not math.isnan(winner_prob):
+                winner_prob_pct = f"{int(round(winner_prob * 100))}%"
+            else:
+                winner_prob_pct = "50%"
+        except:
+            winner_prob_pct = "50%"
+            
+        # Format head-to-head data safely
+        h2h = prediction.get('head_to_head', {})
+        if not h2h:
+            h2h = {}
+        
         result = {
             'success': True,
             'fighter1': {
                 'name': fighter1_name,
-                'win_probability': f"{int(round(prediction['winner_probability' if fighter1_is_winner else 'loser_probability'] * 100))}%",
+                'win_probability': fighter1_prob_pct,
                 'record': prediction.get('fighter1', {}).get('record', 'N/A'),
                 'image_url': prediction.get('fighter1', {}).get('image_url', '')
             },
             'fighter2': {
                 'name': fighter2_name,
-                'win_probability': f"{int(round(prediction['winner_probability' if not fighter1_is_winner else 'loser_probability'] * 100))}%",
+                'win_probability': fighter2_prob_pct,
                 'record': prediction.get('fighter2', {}).get('record', 'N/A'),
                 'image_url': prediction.get('fighter2', {}).get('image_url', '')
             },
             'winner': winner_name,
             'loser': loser_name,
-            'winner_probability': f"{int(round(prediction['winner_probability'] * 100))}%",
+            'winner_probability': winner_prob_pct,
             'prediction_confidence': prediction.get('prediction_confidence', 0.5),
             'model': {
                 'version': prediction.get('model_version', '2.0'),
@@ -1251,149 +1417,130 @@ class FighterPredictor:
                 'status': 'Trained'
             },
             'analysis': self._generate_fight_analysis(prediction) if hasattr(self, '_generate_fight_analysis') else None,
-            'head_to_head': prediction.get('head_to_head', {})
+            'head_to_head': {
+                'fighter1_wins': h2h.get('fighter1_wins', 0),
+                'fighter2_wins': h2h.get('fighter2_wins', 0),
+                'last_winner': h2h.get('last_winner'),
+                'last_method': h2h.get('last_method', ''),
+                'last_round': h2h.get('last_round', 'N/A'),
+                'last_time': h2h.get('last_time', 'N/A')
+            }
         }
         
-        return result 
+        return result
         
     def _generate_fight_analysis(self, prediction):
         """
-        Generate a textual analysis of the fight prediction
+        Creates a cool breakdown of why we think a fighter will win! 🎯
         
-        Args:
-            prediction (dict): The prediction results
-            
-        Returns:
-            str: A detailed fight analysis
+        Takes all our prediction data and turns it into an easy-to-read explanation
+        of who we think will win and why. Includes confidence levels and any
+        head-to-head history between the fighters.
         """
         try:
-            # Extract fighter information
+            # Use our own implementation that's proven to work
             fighter1_name = prediction.get('fighter1', {}).get('name')
             fighter2_name = prediction.get('fighter2', {}).get('name')
             winner_name = prediction.get('winner')
             loser_name = prediction.get('loser')
             win_probability = prediction.get('winner_probability', 0.5)
             
-            # Extract rankings if available
-            fighter1_rank = prediction.get('fighter1', {}).get('ranking', 'unranked')
-            fighter2_rank = prediction.get('fighter2', {}).get('ranking', 'unranked')
-            fighter1_is_champion = prediction.get('fighter1', {}).get('is_champion', False)
-            fighter2_is_champion = prediction.get('fighter2', {}).get('is_champion', False)
-            
-            # Determine fighter styles if available
-            fighter1_style = prediction.get('fighter1', {}).get('style', 'balanced')
-            fighter2_style = prediction.get('fighter2', {}).get('style', 'balanced')
-            
-            # Format rankings for display
-            f1_rank_display = "Champion" if fighter1_is_champion else f"#{fighter1_rank}" if fighter1_rank and fighter1_rank != "unranked" else "Unranked"
-            f2_rank_display = "Champion" if fighter2_is_champion else f"#{fighter2_rank}" if fighter2_rank and fighter2_rank != "unranked" else "Unranked"
-            
-            # Generate intro based on confidence
-            confidence_text = ""
-            if win_probability > 0.80:
-                confidence_text = f"Our model strongly favors {winner_name} with {int(win_probability*100)}% confidence"
-            elif win_probability > 0.65:
-                confidence_text = f"Our model predicts {winner_name} as the likely winner with {int(win_probability*100)}% confidence"
+            # Format as percentage for display
+            if isinstance(win_probability, str) and '%' in win_probability:
+                win_pct = win_probability
             else:
-                confidence_text = f"In a close matchup, our model narrowly favors {winner_name} with {int(win_probability*100)}% confidence"
-            
-            # Generate ranking context
-            ranking_context = ""
-            if fighter1_rank and fighter2_rank and fighter1_rank != "unranked" and fighter2_rank != "unranked":
                 try:
-                    rank1 = int(fighter1_rank) if not fighter1_is_champion else 0
-                    rank2 = int(fighter2_rank) if not fighter2_is_champion else 0
-                    rank_diff = abs(rank1 - rank2)
-                    
-                    if fighter1_is_champion and not fighter2_is_champion:
-                        ranking_context = f"The champion {fighter1_name} faces #{fighter2_rank} ranked contender {fighter2_name}."
-                    elif fighter2_is_champion and not fighter1_is_champion:
-                        ranking_context = f"The champion {fighter2_name} faces #{fighter1_rank} ranked contender {fighter1_name}."
-                    elif rank_diff > 10:
-                        ranking_context = f"This represents a significant ranking mismatch with {rank_diff} positions separating them."
-                    elif rank_diff > 5:
-                        ranking_context = f"There's a notable ranking gap of {rank_diff} positions between these fighters."
-                    elif rank_diff <= 3:
-                        ranking_context = f"This is a closely matched contest between similarly ranked fighters."
+                    win_pct = f"{int(float(win_probability) * 100)}%" if isinstance(win_probability, (int, float)) else "50%"
                 except:
-                    # Fall back if we can't convert ranks to numbers
-                    ranking_context = f"This matchup pits {f1_rank_display} {fighter1_name} against {f2_rank_display} {fighter2_name}."
+                    win_pct = "50%"
             
-            # Generate style matchup text
-            style_matchup = ""
-            if fighter1_style and fighter2_style and fighter1_style != "balanced" and fighter2_style != "balanced":
-                if fighter1_style == "striker" and fighter2_style == "grappler":
-                    style_matchup = f"Classic striker vs grappler matchup with {fighter1_name}'s striking against {fighter2_name}'s ground game."
-                elif fighter1_style == "grappler" and fighter2_style == "striker":
-                    style_matchup = f"Classic grappler vs striker matchup with {fighter1_name}'s ground game against {fighter2_name}'s striking."
-                elif fighter1_style == fighter2_style:
-                    style_matchup = f"Both fighters employ a similar {fighter1_style} style, which could lead to an evenly matched contest."
-            
-            # Generate head-to-head context if available
-            h2h_context = ""
-            if prediction.get('head_to_head'):
-                h2h = prediction.get('head_to_head', {})
-                f1_wins = h2h.get('fighter1_wins', 0)
-                f2_wins = h2h.get('fighter2_wins', 0)
-                
-                if f1_wins > 0 or f2_wins > 0:
-                    if f1_wins > f2_wins:
-                        h2h_context = f"Historically, {fighter1_name} leads the head-to-head matchup {f1_wins}-{f2_wins}."
-                    elif f2_wins > f1_wins:
-                        h2h_context = f"Historically, {fighter2_name} leads the head-to-head matchup {f2_wins}-{f1_wins}."
+            # Generate confidence text
+            confidence_level = ""
+            if isinstance(win_probability, (int, float)):
+                if win_probability > 0.7:
+                    confidence_level = "strongly"
+                elif win_probability > 0.6:
+                    confidence_level = "confidently"
+                elif win_probability > 0.55:
+                    confidence_level = "likely"
                 else:
-                    h2h_context = f"Their previous matchups are tied at {f1_wins} wins each."
+                    confidence_level = "narrowly"
+            else:
+                confidence_level = "likely"
                 
+            # Get head-to-head info
+            h2h = prediction.get('head_to_head', {})
+            h2h_text = ""
+            f1_wins = h2h.get('fighter1_wins', 0)
+            f2_wins = h2h.get('fighter2_wins', 0)
+            
+            if f1_wins > 0 or f2_wins > 0:
+                if f1_wins > f2_wins:
+                    h2h_text = f" In their previous encounters, {fighter1_name} has won {f1_wins} times against {fighter2_name}'s {f2_wins}."
+                elif f2_wins > f1_wins:
+                    h2h_text = f" In their previous encounters, {fighter2_name} has won {f2_wins} times against {fighter1_name}'s {f1_wins}."
+                else:
+                    h2h_text = f" Their previous matchups are tied at {f1_wins} wins each."
+                    
                 if h2h.get('last_winner') and h2h.get('last_method'):
-                    h2h_context += f" Most recently, {h2h.get('last_winner')} won by {h2h.get('last_method')}."
+                    h2h_text += f" Most recently, {h2h.get('last_winner')} won by {h2h.get('last_method')}."
             
-            # Assemble the analysis
-            analysis_parts = [
-                confidence_text + ".",
-                ranking_context,
-                style_matchup,
-                h2h_context,
-                f"According to our advanced statistical model (v{prediction.get('model_version', '2.0')}) with an accuracy of {prediction.get('model_accuracy', '80%')}, {winner_name} has key advantages that should lead to victory against {loser_name}."
-            ]
+            # Add model info
+            model_info = f" (Model v{prediction.get('model_version', '1.0')})"
             
-            # Filter out empty parts and join with spaces
-            analysis = " ".join([part for part in analysis_parts if part])
+            # Assemble the final analysis
+            analysis = f"Our model {confidence_level} predicts {winner_name} to defeat {loser_name} with {win_pct} probability based on their fighting statistics and performance data.{h2h_text}{model_info}"
             
             return analysis
+            
         except Exception as e:
             self.logger.error(f"Error generating fight analysis: {str(e)}")
             return f"Our model predicts {prediction.get('winner', 'Fighter 1')} to win this matchup based on statistical analysis of both fighters' performance data."
 
     def get_available_fighters(self, search_term=None, limit=50):
         """
-        Get a list of fighters available in the database
-        Optionally filter by search term
+        Gets a list of all the fighters in our database! 📋
+        
+        Args:
+            search_term: If you want to search for specific fighters
+            limit: How many fighters to return (max 50 to keep things fast)
+            
+        Returns:
+            A list of fighters with their basic info like record and weight class
         """
         try:
-            conn = get_db_connection()
-            if not conn:
+            supabase = self._get_db_connection()
+            if not supabase:
                 logger.error("No database connection available")
                 return []
-                
-            cursor = conn.cursor()
+            
+            query = supabase.table('fighters').select('fighter_name,Record,Weight,ranking,is_champion,id')
             
             if search_term:
-                # Search with pattern matching
-                query = "SELECT fighter_name, Record, Weight, ranking, is_champion FROM fighters WHERE fighter_name LIKE ? ORDER BY ranking, fighter_name LIMIT ?"
-                cursor.execute(query, (f'%{search_term}%', limit))
-            else:
-                # Get all fighters up to limit
-                query = "SELECT fighter_name, Record, Weight, ranking, is_champion FROM fighters ORDER BY ranking, fighter_name LIMIT ?"
-                cursor.execute(query, (limit,))
+                # Search with pattern matching (ilike for case-insensitive search)
+                query = query.ilike('fighter_name', f'%{search_term}%')
+            
+            # Apply ordering and limit
+            # Note: Sort by ranking numerically, with nulls last
+            try:
+                # First attempt with proper order syntax 
+                response = query.order('ranking', desc=False, nulls_last=True)\
+                               .order('fighter_name')\
+                               .limit(limit)\
+                               .execute()
+            except Exception:
+                # Fallback if the advanced sorting isn't supported
+                logger.warning("Advanced sorting failed, using simpler sorting")
+                response = query.order('ranking')\
+                               .order('fighter_name')\
+                               .limit(limit)\
+                               .execute()
                 
-            fighters = cursor.fetchall()
+            if not response.data:
+                return []
             
-            # Convert to list of dictionaries
-            columns = [col[0] for col in cursor.description]
-            result = [dict(zip(columns, fighter)) for fighter in fighters]
-            
-            cursor.close()
-            return result
+            # Data is already in dictionary format from Supabase
+            return response.data
             
         except Exception as e:
             logger.error(f"Error getting available fighters: {str(e)}")

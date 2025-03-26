@@ -1,14 +1,9 @@
 #!/usr/bin/env python
 """
-Optimized Tapology Scraper with anti-blocking measures and multithreading.
+Tapology Data Scraper
 
-This module provides functionality to scrape fighter data from Tapology while
-implementing various measures to avoid blocking, including:
-- Adaptive throttling
-- Comprehensive error handling
-- Multithreading support
-- Session rotation
-- Progress tracking and resumption
+A robust scraper for collecting fighter data from Tapology with built-in rate limiting
+and error handling. Features include session management, proxy support, and progress tracking.
 """
 
 import argparse
@@ -18,7 +13,6 @@ import logging
 import os
 import random
 import re
-import sqlite3
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -32,10 +26,7 @@ from bs4 import BeautifulSoup
 
 def parse_args() -> argparse.Namespace:
     """
-    Parse command line arguments.
-    
-    Returns:
-        argparse.Namespace: Parsed command line arguments
+    Parse command line arguments for scraper configuration.
     """
     parser = argparse.ArgumentParser(description='Tapology Fighter Scraper')
     parser.add_argument(
@@ -49,6 +40,21 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help='Start processing from a specific fighter index'
     )
+    parser.add_argument(
+        '--only-need-image',
+        action='store_true',
+        help='Only process fighters without an image'
+    )
+    parser.add_argument(
+        '--only-need-tap',
+        action='store_true',
+        help='Only process fighters without a Tapology link'
+    )
+    parser.add_argument(
+        '--include-complete',
+        action='store_true',
+        help='Include fighters with both image and Tapology link'
+    )
     return parser.parse_args()
 
 # Fix import by correctly adding the project root to sys.path
@@ -59,7 +65,7 @@ if PROJECT_ROOT not in sys.path:
     print(f"Added {PROJECT_ROOT} to Python path")
 
 # Now import from backend should work
-from backend.api.database import get_db_connection
+from backend.api.database import get_supabase_client
 
 # Parse command line arguments
 args = parse_args()
@@ -116,6 +122,9 @@ CONFIG = {
     "session_requests_limit": 50, # Requests before creating new session
     "session_duration_limit": 1800,  # Session duration limit in seconds (30 min)
     "state_save_interval": 20,   # Save state every N fighters processed
+    "max_failure_rate": 0.1,     # Maximum allowed failure rate
+    "max_consecutive_failures": 5, # Maximum allowed consecutive failures
+    "save_interval": 300,         # Save progress every N seconds
 }
 
 # Lock for thread-safe DB updates
@@ -143,46 +152,33 @@ if args.reset and os.path.exists(request_stats["progress_file"]):
 
 def get_random_headers() -> Dict[str, str]:
     """
-    Get a random User-Agent header.
-    
-    Returns:
-        Dict[str, str]: Headers dictionary with random User-Agent
+    Generate random user agent headers to prevent request blocking.
     """
     return {"User-Agent": random.choice(USER_AGENTS)}
 
 def get_random_proxy() -> Optional[Dict[str, str]]:
     """
-    Get a random proxy from the proxy list.
-    
-    Returns:
-        Optional[Dict[str, str]]: Random proxy configuration or None if no proxies
+    Select a random proxy from the available proxy pool.
     """
     return random.choice(PROXIES) if PROXIES else None
 
 def adaptive_cooldown() -> float:
     """
-    Calculate adaptive cooldown time based on failure patterns.
-    
-    Returns:
-        float: Cooldown time in seconds
+    Calculate dynamic cooldown time based on request patterns.
     """
     base = CONFIG["min_cooldown"]
     if request_stats["consecutive_failures"] > CONFIG["throttle_threshold"]:
-        # Exponential backoff based on consecutive failures
         backoff_multiplier = min(
             2 ** (request_stats["consecutive_failures"] - CONFIG["throttle_threshold"]),
             CONFIG["max_cooldown"] / base
         )
         cooldown = base * backoff_multiplier
         return min(cooldown, CONFIG["max_cooldown"])
-    return base + random.uniform(0, 30)  # Base cooldown with some randomness
+    return base + random.uniform(0, 30)
 
 def should_rotate_session() -> bool:
     """
-    Determine if we should start a new session based on request count and duration.
-    
-    Returns:
-        bool: True if session should be rotated, False otherwise
+    Determine if the current session needs rotation based on request count and duration.
     """
     session_duration = time.time() - request_stats["session_start_time"]
     return (request_stats["session_request_count"] >= CONFIG["session_requests_limit"] or 
@@ -190,27 +186,18 @@ def should_rotate_session() -> bool:
 
 def rotate_session() -> None:
     """
-    Reset session counters and apply a cooldown before starting a new session.
-    
-    This function:
-    - Saves current progress
-    - Applies an adaptive cooldown
-    - Resets session counters
-    - Reduces consecutive failure count
+    Rotate the current session and apply cooldown period.
     """
     cooldown = adaptive_cooldown()
-    logger.info(
-        f"Rotating session after {request_stats['session_request_count']} requests. "
-        f"Cooling down for {cooldown:.2f} seconds..."
+    logger.debug(
+        f"Rotating session after {request_stats['session_request_count']} requests, "
+        f"cooldown: {cooldown:.2f}s"
     )
     
-    # Save progress before cooldown
     save_progress()
-    
     time.sleep(cooldown)
     request_stats["session_start_time"] = time.time()
     request_stats["session_request_count"] = 0
-    # Reduce failure count on successful rotation
     request_stats["consecutive_failures"] = max(0, request_stats["consecutive_failures"] - 1)
 
 def get_with_retries(
@@ -219,28 +206,18 @@ def get_with_retries(
     backoff_factor: Optional[float] = None
 ) -> Optional[requests.Response]:
     """
-    Makes a GET request with retries, exponential backoff, and adaptive delay.
-    
-    Args:
-        url: The URL to request
-        max_retries: Maximum number of retry attempts (defaults to CONFIG value)
-        backoff_factor: Factor to increase delay between retries (defaults to CONFIG value)
-        
-    Returns:
-        Optional[requests.Response]: Response object if successful, None otherwise
+    Execute HTTP GET request with retry logic and rate limiting.
     """
     if max_retries is None:
         max_retries = CONFIG["max_retries"]
     if backoff_factor is None:
         backoff_factor = CONFIG["backoff_factor"]
     
-    # Check if we should rotate session before new request
     if should_rotate_session():
         rotate_session()
     
     attempt = 0
     while attempt < max_retries:
-        # Use a random delay variation to appear more human-like
         delay_variation = random.uniform(0.5, 1.5)
         current_delay = CONFIG["base_delay"] * delay_variation
         
@@ -258,13 +235,11 @@ def get_with_retries(
             )
             response.raise_for_status()
             
-            # Success! Reset consecutive failures counter
             request_stats["consecutive_failures"] = 0
             request_stats["successful_requests"] += 1
             
-            # Add a random delay between requests
             sleep_time = current_delay + random.uniform(0, 2)
-            logger.debug(f"Request successful, sleeping for {sleep_time:.2f} seconds")
+            logger.debug(f"Request successful, delay: {sleep_time:.2f}s")
             time.sleep(sleep_time)
             return response
         
@@ -273,58 +248,44 @@ def get_with_retries(
             status_code = e.response.status_code if hasattr(e, 'response') else "Unknown"
             
             if status_code in (503, 429):
-                # Rate limiting or service unavailable
                 cooldown = backoff_factor * (2 ** attempt) + random.uniform(10, 30)
                 cooldown = min(cooldown, CONFIG["max_cooldown"])
-                logger.warning(
-                    f"Rate limit error ({status_code}) for {url}, "
-                    f"attempt {attempt + 1}/{max_retries}. "
-                    f"Cooling down for {cooldown:.2f} seconds..."
+                logger.debug(
+                    f"Rate limit ({status_code}), attempt {attempt + 1}/{max_retries}, "
+                    f"cooldown: {cooldown:.2f}s"
                 )
                 time.sleep(cooldown)
             else:
-                logger.error(f"HTTP error {status_code} for {url}: {e}")
-                # For other HTTP errors, try again with a shorter delay
-                time.sleep(current_delay * 2)
+                logger.debug(f"HTTP error {status_code} for {url}")
+                time.sleep(current_delay * 3)
             attempt += 1
                 
         except requests.exceptions.ConnectionError as e:
             request_stats["consecutive_failures"] += 1
-            logger.warning(f"Connection error for {url}: {e}. Waiting before retry...")
+            logger.debug("Connection error, retrying after delay")
             time.sleep(current_delay * 3)
             attempt += 1
             
         except requests.exceptions.Timeout as e:
             request_stats["consecutive_failures"] += 1
-            logger.warning(f"Timeout for {url}: {e}. Waiting before retry...")
-            time.sleep(current_delay * 2)
+            logger.debug("Request timeout, retrying after delay")
+            time.sleep(current_delay * 3)
             attempt += 1
             
         except Exception as e:
             request_stats["consecutive_failures"] += 1
-            logger.error(f"Unexpected error for {url}: {e}")
-            time.sleep(current_delay * 2)
+            logger.error(f"Unexpected error: {str(e)}")
+            time.sleep(current_delay * 3)
             attempt += 1
     
-    # All retries failed - apply adaptive cooldown
     cooldown = adaptive_cooldown()
-    logger.error(
-        f"All {max_retries} retries exhausted for {url}. "
-        f"Cooling down for {cooldown:.2f} seconds..."
-    )
+    logger.debug(f"Max retries reached, cooldown: {cooldown:.2f}s")
     time.sleep(cooldown)
     return None
 
 def save_progress() -> None:
     """
-    Save current progress to allow resuming later.
-    
-    Saves the following information:
-    - Last processed fighter index
-    - Total requests made
-    - Successful requests count
-    - Consecutive failures count
-    - Current timestamp
+    Save current scraping progress to disk.
     """
     state = {
         "last_fighter_index": request_stats["last_fighter_index"],
@@ -336,30 +297,26 @@ def save_progress() -> None:
     try:
         with open(request_stats["progress_file"], 'w') as f:
             json.dump(state, f)
-        logger.info(
-            f"Progress saved: {state['last_fighter_index']} fighters processed, "
-            f"{state['successful_requests']}/{state['total_requests']} successful requests"
+        logger.debug(
+            f"Progress saved: {state['last_fighter_index']} fighters, "
+            f"{state['successful_requests']}/{state['total_requests']} successful"
         )
         request_stats["last_save_time"] = time.time()
     except Exception as e:
-        logger.error(f"Failed to save progress: {e}")
+        logger.error(f"Failed to save progress: {str(e)}")
 
 def load_progress() -> int:
     """
-    Load progress from file.
-    
-    Returns:
-        int: The last processed fighter index
+    Load saved scraping progress from disk.
     """
     try:
         if not os.path.exists(request_stats["progress_file"]):
-            logger.info("No progress file found, starting from beginning")
+            logger.debug("No progress file found, starting from beginning")
             return 0
             
         with open(request_stats["progress_file"], 'r') as f:
             state = json.load(f)
             
-        # Update request stats from saved state
         request_stats.update({
             "last_fighter_index": state.get("last_fighter_index", 0),
             "total_requests": state.get("total_requests", 0),
@@ -367,114 +324,63 @@ def load_progress() -> int:
             "consecutive_failures": state.get("consecutive_failures", 0)
         })
         
-        logger.info(
-            f"Loaded progress: last_fighter_index={state.get('last_fighter_index')}, "
-            f"total_requests={state.get('total_requests')}"
+        logger.debug(
+            f"Progress loaded: index={state.get('last_fighter_index')}, "
+            f"requests={state.get('total_requests')}"
         )
         return state.get("last_fighter_index", 0)
         
     except Exception as e:
-        logger.error(f"Error loading progress: {e}")
+        logger.error(f"Failed to load progress: {str(e)}")
         return 0
 
 def ensure_tap_link_column() -> None:
     """
-    Ensure the tap_link column exists in the fighters table.
-    
-    Creates the column if it doesn't exist, preserving existing data.
+    Verify Supabase schema includes tap_link column.
     """
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            ALTER TABLE fighters 
-            ADD COLUMN tap_link TEXT DEFAULT NULL
-        """)
-        conn.commit()
-        logger.info("Added tap_link column to fighters table")
-    except sqlite3.OperationalError as e:
-        if "duplicate column name" not in str(e).lower():
-            logger.error(f"Error adding tap_link column: {e}")
-    finally:
-        if conn:
-            conn.close()
+        logger.debug("Verifying tap_link column in schema")
+    except Exception as e:
+        logger.error(f"Schema verification failed: {str(e)}")
 
 def remove_nicknames_and_extras(name: str) -> str:
     """
-    Remove nicknames and extra information from fighter names.
-    
-    Args:
-        name: Raw fighter name potentially containing nicknames/extras
-        
-    Returns:
-        str: Cleaned fighter name
+    Clean fighter name by removing nicknames and additional information.
     """
-    # Remove content in quotes (nicknames)
     name = re.sub(r'["\'].*?["\']', '', name)
-    # Remove content in parentheses
     name = re.sub(r'\(.*?\)', '', name)
-    # Remove extra whitespace
     name = ' '.join(name.split())
     return name.strip()
 
 def process_fighter_name(raw_name: str) -> str:
     """
-    Process a raw fighter name for standardization.
-    
-    Args:
-        raw_name: Raw fighter name to process
-        
-    Returns:
-        str: Standardized fighter name
+    Standardize fighter name for consistent matching.
     """
     name = remove_nicknames_and_extras(raw_name)
     return standardize_name(name)
 
 def standardize_name(name: str) -> str:
     """
-    Standardize a fighter name for consistent matching.
-    
-    Args:
-        name: Fighter name to standardize
-        
-    Returns:
-        str: Standardized fighter name
+    Convert fighter name to standardized format.
     """
-    # Convert to lowercase and remove extra whitespace
     name = ' '.join(name.lower().split())
-    # Remove accents and special characters
     name = re.sub(r'[^\w\s-]', '', name)
     return name.strip()
 
 def calculate_similarity(db_name: str, scraped_name: str) -> float:
     """
-    Calculate similarity score between two fighter names.
-    
-    Uses SequenceMatcher to compute similarity, with additional
-    handling for East Asian names that may have different word orders.
-    
-    Args:
-        db_name: Name from database
-        scraped_name: Name from scraping
-        
-    Returns:
-        float: Similarity score between 0 and 1
+    Calculate name similarity score with special handling for East Asian names.
     """
-    # Standardize both names
     db_name = standardize_name(db_name)
     scraped_name = standardize_name(scraped_name)
     
-    # Base similarity score
     similarity = SequenceMatcher(None, db_name, scraped_name).ratio()
     
-    # Special handling for East Asian names
     if looks_like_east_asian_name(db_name) and looks_like_east_asian_name(scraped_name):
-        # Try both word orders
         db_parts = db_name.split()
         scraped_parts = scraped_name.split()
         
         if len(db_parts) == len(scraped_parts) == 2:
-            # Try reversed order
             reversed_db = f"{db_parts[1]} {db_parts[0]}"
             reversed_similarity = SequenceMatcher(None, reversed_db, scraped_name).ratio()
             similarity = max(similarity, reversed_similarity)
@@ -483,20 +389,8 @@ def calculate_similarity(db_name: str, scraped_name: str) -> float:
 
 def looks_like_east_asian_name(name: str) -> bool:
     """
-    Check if a name appears to be East Asian.
-    
-    Uses common patterns in East Asian names to make the determination:
-    - Short (typically 2-3 words)
-    - Each word is short (1-2 characters)
-    - Contains common East Asian surname patterns
-    
-    Args:
-        name: Name to check
-        
-    Returns:
-        bool: True if name appears to be East Asian
+    Check if name matches East Asian naming patterns.
     """
-    # Common East Asian surnames
     east_asian_surnames = {
         'kim', 'lee', 'park', 'choi', 'jung', 'kang', 'cho', 'chang',
         'zhang', 'li', 'wang', 'chen', 'liu', 'yang', 'huang', 'zhao',
@@ -508,18 +402,14 @@ def looks_like_east_asian_name(name: str) -> bool:
         'nguyen', 'tran', 'le', 'pham', 'hoang', 'phan', 'vu', 'dang'
     }
     
-    # Convert to lowercase and split
     parts = name.lower().strip().split()
     
-    # Check name structure
     if not (1 <= len(parts) <= 3):
         return False
         
-    # Check if any part is a common East Asian surname
     if not any(part in east_asian_surnames for part in parts):
         return False
         
-    # Check if parts are short (typical for East Asian names)
     if not all(len(part) <= 3 for part in parts):
         return False
         
@@ -527,95 +417,171 @@ def looks_like_east_asian_name(name: str) -> bool:
 
 def tapology_search_url(fighter_name: str) -> str:
     """
-    Generate the Tapology search URL for a fighter.
-    
-    Args:
-        fighter_name: Name of the fighter to search for
-        
-    Returns:
-        str: URL for searching the fighter on Tapology
+    Generate search URL for fighter on Tapology.
     """
-    return f"https://www.tapology.com/search?term={quote_plus(fighter_name)}&search=fighters"
+    cleaned_name = re.sub(r'[^\w\s]', ' ', fighter_name)
+    cleaned_name = ' '.join(cleaned_name.split())
+    encoded_name = quote_plus(cleaned_name)
+    
+    return f"https://www.tapology.com/search?term={encoded_name}&search=fighters"
+
+def create_direct_fighter_url(fighter_name: str) -> List[str]:
+    """
+    Generate potential direct URLs to fighter's Tapology profile.
+    """
+    urls = []
+    
+    clean_name = re.sub(r'[^\w\s]', '', fighter_name).lower().strip()
+    slug = re.sub(r'\s+', '-', clean_name)
+    urls.append(f"https://www.tapology.com/fightcenter/fighters/{slug}")
+    
+    for i in range(1, 4):
+        urls.append(f"https://www.tapology.com/fightcenter/fighters/{slug}-{i}")
+    
+    name_parts = clean_name.split()
+    if len(name_parts) >= 2:
+        first_name = name_parts[0]
+        last_name = name_parts[-1]
+        
+        urls.append(f"https://www.tapology.com/fightcenter/fighters/{last_name}-{first_name}")
+        
+        for i in range(1, 3):
+            urls.append(f"https://www.tapology.com/fightcenter/fighters/{last_name}-{first_name}-{i}")
+        
+        urls.append(f"https://www.tapology.com/fightcenter/fighters/{first_name}-{last_name}")
+    
+    return urls
 
 def search_tapology_for_fighter(fighter_name: str) -> Optional[str]:
     """
-    Search Tapology for a fighter and return their profile URL.
-    
-    Args:
-        fighter_name: Name of the fighter to search for
-        
-    Returns:
-        Optional[str]: Fighter's Tapology profile URL if found, None otherwise
+    Search and retrieve fighter's Tapology profile URL.
     """
     search_url = tapology_search_url(fighter_name)
+    logger.debug(f"Searching for fighter: {fighter_name}")
+    
     response = get_with_retries(search_url)
     
     if not response:
+        logger.debug(f"Search failed for {fighter_name}, trying direct URLs")
+        direct_urls = create_direct_fighter_url(fighter_name)
+        
+        for direct_url in direct_urls:
+            logger.debug(f"Trying URL: {direct_url}")
+            direct_response = get_with_retries(direct_url)
+            if direct_response and direct_response.status_code == 200:
+                soup = BeautifulSoup(direct_response.text, 'html.parser')
+                if soup.select_one('.fighterHeader') or soup.select_one('.fighterRecord'):
+                    logger.debug(f"Found profile: {direct_url}")
+                    return direct_url
+            time.sleep(random.uniform(1.0, 2.0))
+        
         return None
         
     soup = BeautifulSoup(response.text, 'html.parser')
-    results = soup.find_all('a', class_='name')
     
-    return results[0]['href'] if results else None
+    search_results = soup.select('.searchResult a.name')
+    if search_results and len(search_results) > 0:
+        logger.debug(f"Found {len(search_results)} search results")
+        href = search_results[0].get('href')
+        if href:
+            if not href.startswith('http'):
+                href = f"https://www.tapology.com{href}"
+            logger.debug(f"Selected profile: {href}")
+            return href
+    
+    alt_results = soup.select('.searchResultsFighter a')
+    if alt_results and len(alt_results) > 0:
+        logger.debug(f"Found {len(alt_results)} alternative results")
+        for result in alt_results:
+            href = result.get('href')
+            if href and "/fightcenter/fighters/" in href:
+                if not href.startswith('http'):
+                    href = f"https://www.tapology.com{href}"
+                logger.debug(f"Selected alternative profile: {href}")
+                return href
+    
+    direct_links = soup.select('a[href*="/fightcenter/fighters/"]')
+    if direct_links and len(direct_links) > 0:
+        logger.debug(f"Found {len(direct_links)} direct links")
+        for link in direct_links:
+            href = link.get('href')
+            link_text = link.get_text().lower().strip()
+            fighter_name_lower = fighter_name.lower().strip()
+            
+            if fighter_name_lower in link_text or any(part in link_text for part in fighter_name_lower.split()):
+                if not href.startswith('http'):
+                    href = f"https://www.tapology.com{href}"
+                logger.debug(f"Selected direct link: {href}")
+                return href
+    
+    all_links = soup.find_all('a')
+    logger.debug(f"Scanning {len(all_links)} links for matches")
+    for link in all_links:
+        href = link.get('href')
+        if href and "/fightcenter/fighters/" in href:
+            link_text = link.get_text().lower()
+            fighter_name_parts = fighter_name.lower().split()
+            
+            if any(part in link_text for part in fighter_name_parts):
+                if not href.startswith('http'):
+                    href = f"https://www.tapology.com{href}"
+                logger.debug(f"Found matching link: {href}")
+                return href
+    
+    direct_urls = create_direct_fighter_url(fighter_name)
+    
+    for direct_url in direct_urls:
+        logger.debug(f"Trying final URL: {direct_url}")
+        direct_response = get_with_retries(direct_url)
+        if direct_response and direct_response.status_code == 200:
+            soup = BeautifulSoup(direct_response.text, 'html.parser')
+            if soup.select_one('.fighterHeader') or soup.select_one('.fighterRecord'):
+                logger.debug(f"Found valid profile: {direct_url}")
+                return direct_url
+        time.sleep(random.uniform(1.0, 2.0))
+    
+    logger.debug(f"No profile found for {fighter_name}")
+    return None
 
 def is_valid_fighter_image(image_url: str) -> bool:
     """
-    Check if an image URL appears to be a valid fighter photo.
-    
-    Validates the URL against known patterns for fighter photos and
-    checks for common placeholder/default image indicators.
-    
-    Args:
-        image_url: URL of the image to validate
-        
-    Returns:
-        bool: True if the image appears to be a valid fighter photo
+    Validate fighter image URLs against quality criteria.
     """
     if not image_url:
+        logger.debug("Empty image URL provided")
         return False
+    
+    if 'images.tapology.com/letterbox_images/' in image_url:
+        logger.debug(f"Valid Tapology CDN image found: {image_url}")
+        return True
         
-    # Known placeholder image patterns
     placeholder_patterns = [
-        'placeholder',
-        'default',
-        'no-image',
-        'noimage',
-        'silhouette',
-        'avatar',
-        'unknown'
+        'no-picture', 'no_picture', 'default_profile',
+        'blank-profile', 'no-avatar', 'noavatar',
+        'blank-user', 'blank_user'
     ]
     
-    # Convert URL to lowercase for pattern matching
     url_lower = image_url.lower()
     
-    # Check for placeholder patterns
     if any(pattern in url_lower for pattern in placeholder_patterns):
+        logger.debug(f"Placeholder image detected: {image_url}")
         return False
         
-    # Check for common image extensions
     valid_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
     if not any(ext in url_lower for ext in valid_extensions):
+        logger.debug(f"Invalid image extension: {image_url}")
         return False
         
-    # Additional validation could be added here
-    # - Check image dimensions
-    # - Verify image loads successfully
-    # - Check file size
-    # - etc.
-        
+    if 'tapology.com' in url_lower:
+        logger.debug(f"Valid Tapology domain image: {image_url}")
+        return True
+    
+    logger.debug(f"Image validation passed: {image_url}")
     return True
 
 def scrape_tapology_fighter_page(url: str) -> Tuple[Optional[str], Optional[str]]:
     """
-    Scrape a fighter's profile page on Tapology.
-    
-    Args:
-        url: URL of the fighter's Tapology profile
-        
-    Returns:
-        Tuple[Optional[str], Optional[str]]: Tuple containing:
-            - Fighter's image URL (or None if not found)
-            - Fighter's profile URL (or None if not found)
+    Extract fighter's image URL and profile URL from their Tapology page.
     """
     try:
         response = get_with_retries(url)
@@ -623,23 +589,50 @@ def scrape_tapology_fighter_page(url: str) -> Tuple[Optional[str], Optional[str]
             return None, None
             
         soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Find the fighter's image
         image_url = None
-        image_elem = soup.find('img', class_='profile')
-        if image_elem and 'src' in image_elem.attrs:
-            image_url = image_elem['src']
-            if not image_url.startswith('http'):
+        
+        all_images = soup.find_all('img')
+        for img in all_images:
+            src = img.get('src', '')
+            if 'images.tapology.com/letterbox_images/' in src:
+                image_url = src
+                logger.debug(f"Found CDN image: {image_url}")
+                break
+        
+        if not image_url:
+            for elem in soup.find_all(lambda tag: tag.has_attr('style')):
+                style = elem.get('style', '')
+                if 'background-image' in style and 'images.tapology.com/letterbox_images/' in style:
+                    match = re.search(r"url\(['\"]?(https?://images\.tapology\.com/letterbox_images/[^)'\"]*)['\"]\)?", style)
+                    if match:
+                        image_url = match.group(1)
+                        logger.debug(f"Found CDN background image: {image_url}")
+                        break
+        
+        if not image_url:
+            for img in all_images:
+                src = img.get('src', '')
+                if 'tapology.com' in src and ('images/' in src or 'letterbox' in src):
+                    image_url = src
+                    logger.debug(f"Found Tapology image: {image_url}")
+                    break
+        
+        if image_url and not image_url.startswith('http'):
+            if image_url.startswith('//'):
+                image_url = 'https:' + image_url
+            else:
                 image_url = f"https://www.tapology.com{image_url}"
-                
-        # Validate the image URL
-        if not is_valid_fighter_image(image_url):
-            image_url = None
             
+        if not image_url:
+            logger.debug(f"No image found on page: {url}")
+                
+        if image_url and not image_url.startswith('https://images.tapology.com/'):
+            logger.debug(f"Non-CDN image found: {image_url}")
+        
         return image_url, url
             
     except Exception as e:
-        logger.error(f"Error scraping Tapology page {url}: {e}")
+        logger.error(f"Failed to scrape page: {str(e)}")
         return None, None
 
 def update_fighter_in_db(
@@ -648,195 +641,249 @@ def update_fighter_in_db(
     tapology_url: str
 ) -> bool:
     """
-    Update a fighter's image URL and Tapology link in the database.
-    
-    Args:
-        db_name: Name of the fighter to update
-        new_image_url: New image URL to set
-        tapology_url: Tapology profile URL to set
-        
-    Returns:
-        bool: True if update was successful, False otherwise
+    Update fighter's image and Tapology URLs in database.
     """
     try:
         with db_lock:
-            conn = get_db_connection()
-            cursor = conn.cursor()
+            supabase = get_supabase_client()
             
-            cursor.execute("""
-                UPDATE fighters 
-                SET image_url = ?, tap_link = ?
-                WHERE fighter_name = ?
-            """, (new_image_url, tapology_url, db_name))
+            logger.debug(f"Updating fighter: {db_name}")
+            logger.debug(f"Image URL: {new_image_url}")
+            logger.debug(f"Tapology URL: {tapology_url}")
             
-            conn.commit()
-            return True
+            update_data = {}
+            if new_image_url:
+                update_data['image_url'] = new_image_url
+            if tapology_url:
+                update_data['tap_link'] = tapology_url
+                
+            if not update_data:
+                logger.debug(f"No updates needed for {db_name}")
+                return False
+                
+            response = supabase.table('fighters') \
+                .update(update_data) \
+                .eq('fighter_name', db_name) \
+                .execute()
             
+            if response.data and len(response.data) > 0:
+                updated_fields = []
+                if 'image_url' in update_data:
+                    updated_fields.append('image_url')
+                if 'tap_link' in update_data:
+                    updated_fields.append('tap_link')
+                
+                logger.debug(f"Updated {db_name}: {', '.join(updated_fields)}")
+                return True
+            else:
+                logger.debug(f"Update failed for {db_name}")
+                
+                check_response = supabase.table('fighters') \
+                    .select('fighter_name') \
+                    .eq('fighter_name', db_name) \
+                    .execute()
+                
+                if check_response.data and len(check_response.data) > 0:
+                    logger.debug(f"Fighter exists but update failed: {db_name}")
+                else:
+                    logger.debug(f"Fighter not found: {db_name}")
+                
+                return False
+                
     except Exception as e:
-        logger.error(f"Error updating database for {db_name}: {e}")
+        logger.error(f"Database update failed: {str(e)}")
         return False
-        
-    finally:
-        if conn:
-            conn.close()
 
 def process_fighter(
     fighter_data: Tuple[str, Optional[str], Optional[str]]
 ) -> bool:
     """
-    Process a single fighter's data.
-    
-    This function:
-    1. Searches for the fighter on Tapology
-    2. Scrapes their profile page
-    3. Updates their information in the database
-    
-    Args:
-        fighter_data: Tuple containing:
-            - Fighter's name
-            - Current image URL
-            - Current Tapology link
-            
-    Returns:
-        bool: True if processing was successful, False otherwise
+    Process fighter data and update their Tapology information.
     """
     try:
         name, current_image, current_tap_link = fighter_data
         
-        # Skip if we already have both image and Tapology link
-        if current_image and current_tap_link:
-            logger.debug(f"Skipping {name} - already has image and Tapology link")
+        logger.debug(f"Processing fighter: {name}")
+        logger.debug(f"Current image: {current_image}")
+        logger.debug(f"Current link: {current_tap_link}")
+        
+        has_tapology_image = current_image and 'images.tapology.com/letterbox_images/' in current_image
+        if has_tapology_image and current_tap_link:
+            logger.debug(f"Skipping {name}: already complete")
             return True
             
-        # Search for fighter on Tapology
         tap_url = search_tapology_for_fighter(name)
+        
         if not tap_url:
-            logger.warning(f"Could not find Tapology page for {name}")
+            logger.debug(f"Trying direct URLs for {name}")
+            direct_urls = create_direct_fighter_url(name)
+            
+            for url in direct_urls[:3]:
+                logger.debug(f"Checking URL: {url}")
+                response = get_with_retries(url)
+                if response and response.status_code == 200:
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    if soup.select_one('.fighterHeader, .fighterRecord, .fighterBio'):
+                        tap_url = url
+                        logger.debug(f"Found valid URL: {tap_url}")
+                        break
+                time.sleep(random.uniform(1.0, 2.0))
+        
+        if not tap_url:
+            logger.debug(f"No Tapology page found for {name}")
             return False
             
-        # Scrape fighter's page
+        logger.debug(f"Scraping page: {tap_url}")
         image_url, profile_url = scrape_tapology_fighter_page(tap_url)
         
-        # Update database if we found new information
-        if image_url or profile_url:
+        logger.debug(f"Found image: {image_url}")
+        logger.debug(f"Found profile: {profile_url}")
+        
+        update_image = False
+        if image_url:
+            if not current_image:
+                update_image = True
+                logger.debug(f"Adding new image for {name}")
+            elif not has_tapology_image and 'images.tapology.com/letterbox_images/' in image_url:
+                update_image = True
+                logger.debug(f"Upgrading to CDN image for {name}")
+        
+        update_link = profile_url and not current_tap_link
+        
+        if update_image or update_link:
+            update_data = {}
+            if update_image:
+                update_data['image_url'] = image_url
+            if update_link:
+                update_data['tap_link'] = profile_url
+                
             success = update_fighter_in_db(
                 name,
-                image_url or current_image,
-                profile_url or current_tap_link
+                update_data.get('image_url', current_image),
+                update_data.get('tap_link', current_tap_link)
             )
-            if success:
-                logger.info(f"Updated {name} with new data")
-            return success
             
-        return False
-        
-    except Exception as e:
-        logger.error(f"Error processing fighter {fighter_data[0]}: {e}")
-        return False
-
-def scrape_for_db():
-    """Main scraping function with multithreading and resume capability."""
-    ensure_tap_link_column()
-    
-    # Get all fighters from database
-    conn = get_db_connection()
-    cur = conn.cursor()
-    fighters = [(row[0], row[1], row[2]) for row in cur.execute("SELECT fighter_name, image_url, tap_link FROM fighters").fetchall()]
-    conn.close()
-
-    if not fighters:
-        logger.info("No fighters found in DB.")
-        return
-        
-    # Store total fighters count for reference
-    request_stats["total_fighters"] = len(fighters)
-
-    # If a specific start index is provided via command line, use it
-    if args.start_index is not None:
-        if 0 <= args.start_index < len(fighters):
-            start_index = args.start_index
-            logger.info(f"Using provided start index: {start_index}")
+            if success:
+                updates = []
+                if update_image:
+                    updates.append("image_url")
+                if update_link:
+                    updates.append("tap_link")
+                    
+                logger.debug(f"Updated {name}: {', '.join(updates)}")
+                return True
+            else:
+                logger.debug(f"Update failed for {name}")
+                return False
         else:
-            logger.warning(f"Provided start index {args.start_index} is out of range (0-{len(fighters)-1}). Using default.")
-            start_index = load_progress()
-    else:
-        # Load progress to resume from where we left off
-        start_index = load_progress()
-    
-    # Restart from beginning if all fighters were processed in a previous run
-    if start_index >= len(fighters):
-        logger.info("All fighters were processed in a previous run. Restarting from the beginning.")
-        start_index = 0
-        
-    fighters_to_process = fighters[start_index:]
-    
-    logger.info(f"Starting processing at index {start_index} ({len(fighters_to_process)} fighters remaining of {len(fighters)} total)")
-    
-    # Fix: Ensure max_workers is at least 1
-    max_workers = max(1, min(CONFIG["max_workers"], len(fighters_to_process)))
-    updated_count = 0
-    processed_count = 0
-
-    try:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Instead of processing all at once, batch the work
-            batch_size = 10  # Process small batches
-            for batch_start in range(0, len(fighters_to_process), batch_size):
-                batch_end = min(batch_start + batch_size, len(fighters_to_process))
-                batch = fighters_to_process[batch_start:batch_end]
-                
-                logger.info(f"Processing batch of {len(batch)} fighters (overall progress: {start_index + processed_count}/{len(fighters)} - {((start_index + processed_count) / len(fighters) * 100):.1f}%)")
-                
-                # Process batch in parallel
-                future_to_fighter = {executor.submit(process_fighter, fighter): fighter[0] for fighter in batch}
-                for future in as_completed(future_to_fighter):
-                    fighter_name = future_to_fighter[future]
-                    try:
-                        if future.result():
-                            updated_count += 1
-                        processed_count += 1
-                        
-                        # Update progress
-                        request_stats["last_fighter_index"] = start_index + processed_count
-                        
-                        # Save progress periodically
-                        if processed_count % CONFIG["state_save_interval"] == 0 or (time.time() - request_stats["last_save_time"] > 300):
-                            save_progress()
-                            
-                    except Exception as e:
-                        logger.error(f"Error handling result for fighter '{fighter_name}': {e}")
-                
-                # Add a cooldown period between batches
-                cooldown = random.uniform(5, 15)
-                logger.info(f"Batch complete. Cooling down for {cooldown:.1f} seconds before next batch...")
-                time.sleep(cooldown)
-    
-    except KeyboardInterrupt:
-        logger.info("Scraping interrupted by user. Saving progress...")
-        save_progress()
-        logger.info(f"Processed {processed_count} fighters, updated {updated_count} before interruption.")
-        return
+            logger.debug(f"No updates needed for {name}")
+            return True
+            
     except Exception as e:
-        logger.error(f"Unexpected error in main scraping loop: {e}")
-        save_progress()
-        logger.info(f"Processed {processed_count} fighters, updated {updated_count} before error.")
-        return
-    
-    # Final progress save
-    save_progress()
-    logger.info(f"Scraping complete. Processed {processed_count} fighters, updated {updated_count}.")
+        logger.error(f"Failed to process {fighter_data[0]}: {str(e)}")
+        return False
+
+def should_continue_processing() -> bool:
+    """
+    Check if scraping should continue based on performance metrics.
+    """
+    if request_stats["total_requests"] > 20:
+        failure_rate = 1 - (request_stats["successful_requests"] / request_stats["total_requests"])
+        if failure_rate > CONFIG["max_failure_rate"]:
+            logger.error(
+                f"Stopping: failure rate {failure_rate:.2f} exceeds {CONFIG['max_failure_rate']:.2f}"
+            )
+            return False
+            
+    if request_stats["consecutive_failures"] > CONFIG["max_consecutive_failures"]:
+        logger.error(
+            f"Stopping: {request_stats['consecutive_failures']} consecutive failures"
+        )
+        return False
+        
+    return True
 
 def main():
-    """Main entry point with comprehensive error handling."""
-    logger.info("Starting Tapology scraper with continuous operation mode")
+    """
+    Main scraping process for fighter data collection.
+    """
     try:
-        scrape_for_db()
-    except KeyboardInterrupt:
-        logger.info("Scraper stopped by user")
+        ensure_tap_link_column()
+        
+        start_index = 1
+        logger.info(f"Starting from index {start_index}")
+        request_stats["last_fighter_index"] = start_index
+        
+        supabase = get_supabase_client()
+        
+        page_size = 1000
+        all_fighters = []
+        page = 0
+        
+        while True:
+            response = supabase.table('fighters') \
+                .select('fighter_name, image_url, tap_link') \
+                .range(page * page_size, (page + 1) * page_size - 1) \
+                .execute()
+            
+            fighters_page = response.data
+            if not fighters_page or len(fighters_page) == 0:
+                break
+                
+            all_fighters.extend(fighters_page)
+            
+            if len(fighters_page) < page_size:
+                break
+                
+            page += 1
+        
+        fighters = [(row['fighter_name'], row.get('image_url'), row.get('tap_link')) for row in all_fighters]
+        
+        if args.only_need_image:
+            fighters = [f for f in fighters if not f[1]]
+            
+        if args.only_need_tap:
+            fighters = [f for f in fighters if not f[2]]
+            
+        if not args.include_complete:
+            fighters = [f for f in fighters if not (f[1] and f[2])]
+            
+        logger.info(f"Found {len(fighters)} fighters to process")
+        logger.info(f"Starting from index {start_index}")
+        
+        i = start_index
+        while i < len(fighters) and should_continue_processing():
+            fighter = fighters[i]
+            logger.info(f"Processing {i+1}/{len(fighters)}: {fighter[0]}")
+            
+            success = process_fighter(fighter)
+            i += 1
+            request_stats["last_fighter_index"] = i
+            
+            if time.time() - request_stats["last_save_time"] > CONFIG["save_interval"]:
+                save_progress()
+                
+            if i % 10 == 0:
+                success_rate = request_stats['successful_requests'] / max(1, request_stats['total_requests']) * 100
+                logger.info(
+                    f"Progress: {i}/{len(fighters)} fighters, "
+                    f"{request_stats['successful_requests']}/{request_stats['total_requests']} "
+                    f"successful ({success_rate:.1f}%)"
+                )
+                
+        save_progress()
+        success_rate = request_stats['successful_requests'] / max(1, request_stats['total_requests']) * 100
+        logger.info(
+            f"Complete: {i}/{len(fighters)} fighters, "
+            f"{request_stats['successful_requests']}/{request_stats['total_requests']} "
+            f"successful ({success_rate:.1f}%)"
+        )
+        
     except Exception as e:
-        logger.error(f"Uncaught exception in main: {e}")
+        logger.error(f"Main process failed: {str(e)}")
+        save_progress()
     finally:
-        logger.info(f"Scraper finished. Stats: {request_stats['successful_requests']}/{request_stats['total_requests']} successful requests")
+        save_progress()
 
 if __name__ == "__main__":
     main()

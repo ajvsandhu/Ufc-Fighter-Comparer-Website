@@ -12,13 +12,13 @@ from backend.constants import (
     LOG_FORMAT,
     LOG_DATE_FORMAT,
     MODEL_PATH,
-    API_V1_PREFIX
+    API_V1_PREFIX,
+    MAX_FIGHTS_DISPLAY
 )
 from typing import Dict, List, Optional, Any
 import json
 import re
 from urllib.parse import unquote
-import sqlite3
 
 # Set up logging
 logging.basicConfig(
@@ -106,9 +106,18 @@ def format_fighter_data(fighter_data: Dict, last_5_fights: List) -> Dict[str, An
     # Add last 5 fights
     fighter_dict['last_5_fights'] = [dict(fight) for fight in last_5_fights] if last_5_fights else []
     
+    # Convert ID fields to strings for consistency
+    if 'id' in fighter_dict:
+        fighter_dict['id'] = str(fighter_dict['id'])
+        # Also set unique_id for backwards compatibility
+        fighter_dict['unique_id'] = str(fighter_dict['id'])
+    
     # Extract additional statistics from last 5 fights
-    recent_stats = extract_recent_fight_stats(fighter_dict['last_5_fights'])
-    fighter_dict.update(recent_stats)
+    try:
+        recent_stats = extract_recent_fight_stats(fighter_dict['last_5_fights'])
+        fighter_dict.update(recent_stats)
+    except Exception as e:
+        logger.warning(f"Error extracting recent fight stats: {e}")
     
     return fighter_dict
 
@@ -164,11 +173,13 @@ def normalize_fighter_name(name: str) -> dict:
 @router.get("/predict/{fighter1_name}/{fighter2_name}")
 async def predict_winner(fighter1_name: str, fighter2_name: str):
     """Predict the winner between two fighters"""
-    conn = None
     try:
         logger.info(f"Prediction request for {fighter1_name} vs {fighter2_name}")
         # Get fighter data from database
-        conn = get_db_connection()
+        supabase = get_db_connection()
+        if not supabase:
+            logger.error("No database connection available")
+            raise HTTPException(status_code=500, detail="Database connection error")
         
         # Normalize fighter names and extract info
         fighter1_info = normalize_fighter_name(fighter1_name)
@@ -184,242 +195,222 @@ async def predict_winner(fighter1_name: str, fighter2_name: str):
         try:
             # If we have weight class and record, try to use them for more precise matching
             if fighter1_info['record']:
-                # Since weight_class doesn't exist, just search by record
-                cursor = conn.execute(
-                    """
-                    SELECT *, rowid as unique_id FROM fighters 
-                    WHERE LOWER(REPLACE(REPLACE(REPLACE(fighter_name, '"', ''), '''', ''), '  ', ' ')) = ?
-                      AND Record = ?
-                    """, 
-                    (fighter1_info['name'], fighter1_info['record'])
-                )
-                fighter1_data = cursor.fetchone()
+                # Search by name and record
+                response = supabase.table('fighters')\
+                    .select('*')\
+                    .ilike('fighter_name', fighter1_info['name'])\
+                    .eq('Record', fighter1_info['record'])\
+                    .execute()
+                
+                if response.data and len(response.data) > 0:
+                    fighter1_data = response.data[0]
             
             # If we couldn't find with record, or if we didn't have record info
             if not fighter1_data:
-                cursor = conn.execute(
-                    """
-                    SELECT *, rowid as unique_id FROM fighters 
-                    WHERE LOWER(REPLACE(REPLACE(REPLACE(fighter_name, '"', ''), '''', ''), '  ', ' ')) = ?
-                    """, 
-                    (fighter1_info['name'],)
-                )
-                all_matches = cursor.fetchall()
+                # Try just by name
+                response = supabase.table('fighters')\
+                    .select('*')\
+                    .ilike('fighter_name', fighter1_info['name'])\
+                    .execute()
                 
-                if all_matches and len(all_matches) > 0:
-                    # If we have multiple matches and record info, try to find the best match
-                    if len(all_matches) > 1 and fighter1_info['record']:
-                        best_match = None
-                        for match in all_matches:
-                            # Get record index
-                            record_idx = None
-                            for i, col in enumerate(cursor.description):
-                                if col[0].lower() == 'record':
-                                    record_idx = i
-                                    break
-                            
-                            if record_idx is not None and fighter1_info['record']:
-                                match_record = match[record_idx]
-                                if match_record and match_record == fighter1_info['record']:
-                                    logger.info(f"Found match by record: {match_record}")
-                                    best_match = match
-                                    break
-                        
-                        fighter1_data = best_match if best_match else all_matches[0]
-                        
-                        if not best_match:
-                            logger.warning(f"Using first match found since no better match found: {all_matches[0][0]}")
-                    else:
-                        # Just use the first match
-                        fighter1_data = all_matches[0]
-                        logger.info(f"Using single match found: {fighter1_data[0]}")
-                else:
-                    # If no match found, try fuzzy matching
-                    cursor = conn.execute(
-                        """
-                        SELECT *, rowid as unique_id FROM fighters 
-                        WHERE LOWER(REPLACE(REPLACE(REPLACE(fighter_name, '"', ''), '''', ''), '  ', ' ')) LIKE ?
-                        """, 
-                        (f"%{fighter1_info['name']}%",)
-                    )
-                    potential_matches = cursor.fetchall()
-                    
-                    if potential_matches and len(potential_matches) > 0:
-                        fighter1_data = potential_matches[0]
-                        fighter1_found = True
-                    else:
-                        logger.warning(f"Fighter not found: {fighter1_name}")
-                        raise HTTPException(status_code=404, detail=f"Fighter not found: {fighter1_name}. Please check the spelling or try a different fighter.")
-            else:
-                fighter1_found = True
-        except sqlite3.Error as e:
-            logger.error(f"Database error looking up fighter 1: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Database error looking up fighter 1: {str(e)}")
+                if response.data and len(response.data) > 0:
+                    fighter1_data = response.data[0]
+            
+            # If still not found, try with fuzzy search
+            if not fighter1_data:
+                response = supabase.table('fighters')\
+                    .select('*')\
+                    .ilike('fighter_name', f'%{fighter1_info["name"]}%')\
+                    .execute()
+                
+                if response.data and len(response.data) > 0:
+                    fighter1_data = response.data[0]
+            
+            fighter1_found = fighter1_data is not None
+            
+        except Exception as e:
+            logger.error(f"Error getting fighter 1 data: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error getting fighter 1 data: {str(e)}")
         
-        # Validate fighter 1 was found
-        if not fighter1_data:
-            logger.warning(f"Fighter 1 not found: {fighter1_name}")
-            raise HTTPException(status_code=404, detail=f"Fighter not found: {fighter1_name}. Please check the spelling or try a different fighter.")
-        
-        # Similar approach for fighter 2
+        if not fighter1_found:
+            raise HTTPException(status_code=404, detail=f"Fighter not found: {fighter1_name}")
+            
+        # Get fighter 2 data using all available information
         fighter2_data = None
         fighter2_found = False
         
         try:
-            # Just search by record since weight_class doesn't exist
+            # If we have weight class and record, try to use them for more precise matching
             if fighter2_info['record']:
-                cursor = conn.execute(
-                    """
-                    SELECT *, rowid as unique_id FROM fighters 
-                    WHERE LOWER(REPLACE(REPLACE(REPLACE(fighter_name, '"', ''), '''', ''), '  ', ' ')) = ?
-                      AND Record = ?
-                    """, 
-                    (fighter2_info['name'], fighter2_info['record'])
-                )
-                fighter2_data = cursor.fetchone()
-            
-            # If we couldn't find with record, or if we didn't have that info
-            if not fighter2_data:
-                cursor = conn.execute(
-                    """
-                    SELECT *, rowid as unique_id FROM fighters 
-                    WHERE LOWER(REPLACE(REPLACE(REPLACE(fighter_name, '"', ''), '''', ''), '  ', ' ')) = ?
-                    """, 
-                    (fighter2_info['name'],)
-                )
-                all_matches = cursor.fetchall()
+                # Search by name and record
+                response = supabase.table('fighters')\
+                    .select('*')\
+                    .ilike('fighter_name', fighter2_info['name'])\
+                    .eq('Record', fighter2_info['record'])\
+                    .execute()
                 
-                if all_matches and len(all_matches) > 0:
-                    # If we have multiple matches and record info, try to find the best match
-                    if len(all_matches) > 1 and fighter2_info['record']:
-                        best_match = None
-                        for match in all_matches:
-                            # Get record index
-                            record_idx = None
-                            for i, col in enumerate(cursor.description):
-                                if col[0].lower() == 'record':
-                                    record_idx = i
-                                    break
-                            
-                            if record_idx is not None and fighter2_info['record']:
-                                match_record = match[record_idx]
-                                if match_record and match_record == fighter2_info['record']:
-                                    logger.info(f"Found match by record: {match_record}")
-                                    best_match = match
-                                    break
-                        
-                        fighter2_data = best_match if best_match else all_matches[0]
-                        
-                        if not best_match:
-                            logger.warning(f"Using first match found since no better match found: {all_matches[0][0]}")
-                    else:
-                        # Just use the first match
-                        fighter2_data = all_matches[0]
-                        logger.info(f"Using single match found: {fighter2_data[0]}")
-                else:
-                    # If no match found, try fuzzy matching
-                    cursor = conn.execute(
-                        """
-                        SELECT *, rowid as unique_id FROM fighters 
-                        WHERE LOWER(REPLACE(REPLACE(REPLACE(fighter_name, '"', ''), '''', ''), '  ', ' ')) LIKE ?
-                        """, 
-                        (f"%{fighter2_info['name']}%",)
-                    )
-                    potential_matches = cursor.fetchall()
-                    
-                    if potential_matches and len(potential_matches) > 0:
-                        fighter2_data = potential_matches[0]
-                        fighter2_found = True
-                    else:
-                        logger.warning(f"Fighter not found: {fighter2_name}")
-                        raise HTTPException(status_code=404, detail=f"Fighter not found: {fighter2_name}. Please check the spelling or try a different fighter.")
-            else:
-                fighter2_found = True
-        except sqlite3.Error as e:
-            logger.error(f"Database error looking up fighter 2: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Database error looking up fighter 2: {str(e)}")
+                if response.data and len(response.data) > 0:
+                    fighter2_data = response.data[0]
+            
+            # If we couldn't find with record, or if we didn't have record info
+            if not fighter2_data:
+                # Try just by name
+                response = supabase.table('fighters')\
+                    .select('*')\
+                    .ilike('fighter_name', fighter2_info['name'])\
+                    .execute()
+                
+                if response.data and len(response.data) > 0:
+                    fighter2_data = response.data[0]
+            
+            # If still not found, try with fuzzy search
+            if not fighter2_data:
+                response = supabase.table('fighters')\
+                    .select('*')\
+                    .ilike('fighter_name', f'%{fighter2_info["name"]}%')\
+                    .execute()
+                
+                if response.data and len(response.data) > 0:
+                    fighter2_data = response.data[0]
+            
+            fighter2_found = fighter2_data is not None
+            
+        except Exception as e:
+            logger.error(f"Error getting fighter 2 data: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error getting fighter 2 data: {str(e)}")
         
-        # Validate fighter 2 was found
-        if not fighter2_data:
-            logger.warning(f"Fighter 2 not found: {fighter2_name}")
-            raise HTTPException(status_code=404, detail=f"Fighter not found: {fighter2_name}. Please check the spelling or try a different fighter.")
+        if not fighter2_found:
+            raise HTTPException(status_code=404, detail=f"Fighter not found: {fighter2_name}")
+            
+        # Get recent fights for both fighters
+        try:
+            # Get fighter 1's last 5 fights
+            fights_response = supabase.table('fighter_last_5_fights')\
+                .select('*')\
+                .eq('fighter_name', fighter1_data['fighter_name'])\
+                .order('id')\
+                .limit(5)\
+                .execute()
+                
+            fighter1_last_5_fights = fights_response.data if fights_response.data else []
+            
+            # Get fighter 2's last 5 fights
+            fights_response = supabase.table('fighter_last_5_fights')\
+                .select('*')\
+                .eq('fighter_name', fighter2_data['fighter_name'])\
+                .order('id')\
+                .limit(5)\
+                .execute()
+                
+            fighter2_last_5_fights = fights_response.data if fights_response.data else []
+            
+        except Exception as e:
+            logger.error(f"Error getting fighter fight data: {str(e)}")
+            fighter1_last_5_fights = []
+            fighter2_last_5_fights = []
         
-        # Get unique_id values for both fighters
-        unique_id_idx1 = [i for i, col in enumerate(cursor.description) if col[0].lower() == 'unique_id']
-        unique_id_idx2 = unique_id_idx1  # Same column position
+        # Format fighter data for prediction
+        fighter1_dict = format_fighter_data(fighter1_data, fighter1_last_5_fights)
+        fighter2_dict = format_fighter_data(fighter2_data, fighter2_last_5_fights)
         
-        unique_id1 = str(fighter1_data[unique_id_idx1[0]]) if unique_id_idx1 else "unknown"
-        unique_id2 = str(fighter2_data[unique_id_idx2[0]]) if unique_id_idx2 else "unknown"
-        
-        logger.info(f"Using fighter1 with unique_id: {unique_id1}")
-        logger.info(f"Using fighter2 with unique_id: {unique_id2}")
+        # Add unique_id to help identify fighters
+        fighter1_dict['unique_id'] = str(fighter1_data.get('id', "unknown"))
+        fighter2_dict['unique_id'] = str(fighter2_data.get('id', "unknown"))
         
         # Check if the same fighter is selected twice
-        if (unique_id1 and unique_id2 and 
-            unique_id1 == unique_id2 and 
-            unique_id1 != "unknown" and 
-            unique_id1 != "" and 
-            unique_id2 != "unknown" and 
-            unique_id2 != ""):
-            logger.warning(f"Same fighter selected twice with unique_id: {unique_id1}")
+        if (fighter1_dict['unique_id'] and fighter2_dict['unique_id'] and 
+            fighter1_dict['unique_id'] == fighter2_dict['unique_id'] and 
+            fighter1_dict['unique_id'] != "unknown" and 
+            fighter1_dict['unique_id'] != "" and 
+            fighter2_dict['unique_id'] != "unknown" and 
+            fighter2_dict['unique_id'] != ""):
+            logger.warning(f"Same fighter selected twice with unique_id: {fighter1_dict['unique_id']}")
             raise HTTPException(status_code=400, detail="Cannot predict a fighter against themselves. Please select two different fighters.")
         
         # Additional check - if both are "unknown" IDs, but the normalized names are identical, also block
-        if (unique_id1 == unique_id2 == "unknown" and 
+        if (fighter1_dict['unique_id'] == fighter2_dict['unique_id'] == "unknown" and 
             fighter1_info['name'].lower() == fighter2_info['name'].lower()):
             logger.warning(f"Same fighter selected twice based on identical name: {fighter1_info['name']}")
             raise HTTPException(status_code=400, detail="Cannot predict a fighter against themselves. Please select two different fighters.")
         
-        # Get fighter 1's last 5 fights using the actual name from the database
-        fighter_name_idx = [i for i, col in enumerate(cursor.description) if col[0].lower() == 'fighter_name']
-        actual_fighter1_name = fighter1_data[fighter_name_idx[0]] if fighter_name_idx else fighter1_data[0]  # Assuming fighter_name is the first column
-        cursor = conn.execute(
-            """
-            SELECT * FROM fighter_last_5_fights 
-            WHERE fighter_name = ? 
-            ORDER BY fight_date DESC, id DESC 
-            LIMIT 5
-            """, 
-            (actual_fighter1_name,)
-        )
-        fighter1_last5 = cursor.fetchall()
-        logger.info(f"Found {len(fighter1_last5) if fighter1_last5 else 0} fights for {actual_fighter1_name}")
+        # Check for head-to-head matchups
+        h2h_data = {}
+        try:
+            # Check if fighter1 has fought fighter2
+            h2h_response = supabase.table('fighter_last_5_fights')\
+                .select('*')\
+                .eq('fighter_name', fighter1_data['fighter_name'])\
+                .eq('opponent', fighter2_data['fighter_name'])\
+                .execute()
+            
+            f1_vs_f2_fights = h2h_response.data if h2h_response.data else []
+            
+            # Check if fighter2 has fought fighter1
+            h2h_response = supabase.table('fighter_last_5_fights')\
+                .select('*')\
+                .eq('fighter_name', fighter2_data['fighter_name'])\
+                .eq('opponent', fighter1_data['fighter_name'])\
+                .execute()
+                
+            f2_vs_f1_fights = h2h_response.data if h2h_response.data else []
+            
+            # Process head-to-head data
+            if f1_vs_f2_fights or f2_vs_f1_fights:
+                h2h_data = {
+                    'fighter1_name': fighter1_data['fighter_name'],
+                    'fighter2_name': fighter2_data['fighter_name'],
+                    'fighter1_wins': 0,
+                    'fighter2_wins': 0,
+                    'draws': 0,
+                    'total_fights': len(f1_vs_f2_fights) + len(f2_vs_f1_fights)
+                }
+                
+                # Count wins for fighter1
+                for fight in f1_vs_f2_fights:
+                    result = fight.get('result', '').lower()
+                    if 'win' in result or result.startswith('w'):
+                        h2h_data['fighter1_wins'] += 1
+                    elif 'draw' in result or result.startswith('d'):
+                        h2h_data['draws'] += 1
+                
+                # Count wins for fighter2
+                for fight in f2_vs_f1_fights:
+                    result = fight.get('result', '').lower()
+                    if 'win' in result or result.startswith('w'):
+                        h2h_data['fighter2_wins'] += 1
+                    elif 'draw' in result or result.startswith('d'):
+                        h2h_data['draws'] += 1
+                
+                # Get the most recent fight
+                all_h2h_fights = f1_vs_f2_fights + f2_vs_f1_fights
+                if all_h2h_fights:
+                    # Sort by date (most recent first)
+                    all_h2h_fights.sort(key=lambda x: x.get('fight_date', ''), reverse=True)
+                    last_fight = all_h2h_fights[0]
+                    
+                    if last_fight.get('fighter_name') == fighter1_data['fighter_name']:
+                        result = last_fight.get('result', '').lower()
+                        if 'win' in result or result.startswith('w'):
+                            h2h_data['last_winner'] = fighter1_data['fighter_name']
+                        else:
+                            h2h_data['last_winner'] = fighter2_data['fighter_name']
+                    else:
+                        result = last_fight.get('result', '').lower()
+                        if 'win' in result or result.startswith('w'):
+                            h2h_data['last_winner'] = fighter2_data['fighter_name']
+                        else:
+                            h2h_data['last_winner'] = fighter1_data['fighter_name']
+                    
+                    h2h_data['last_method'] = last_fight.get('method', 'Decision')
+                    h2h_data['last_round'] = last_fight.get('round', 'N/A')
+                    h2h_data['last_time'] = last_fight.get('time', 'N/A')
         
-        # Get fighter 2's last 5 fights using the actual name from the database
-        actual_fighter2_name = fighter2_data[fighter_name_idx[0]] if fighter_name_idx else fighter2_data[0]  # Assuming fighter_name is the first column
-        cursor = conn.execute(
-            """
-            SELECT * FROM fighter_last_5_fights 
-            WHERE fighter_name = ? 
-            ORDER BY fight_date DESC, id DESC 
-            LIMIT 5
-            """, 
-            (actual_fighter2_name,)
-        )
-        fighter2_last5 = cursor.fetchall()
-        logger.info(f"Found {len(fighter2_last5) if fighter2_last5 else 0} fights for {actual_fighter2_name}")
+        except Exception as e:
+            logger.error(f"Error getting head-to-head data: {str(e)}")
+            h2h_data = {}
         
-        # Format fighter data for prediction
-        fighter1_dict = format_fighter_data(fighter1_data, fighter1_last5)
-        fighter2_dict = format_fighter_data(fighter2_data, fighter2_last5)
-        
-        # Add unique_id to help identify fighters
-        fighter1_dict['unique_id'] = unique_id1
-        fighter2_dict['unique_id'] = unique_id2
-        
-        # Check if they have fought each other before
-        head_to_head = check_head_to_head(
-            fighter1_dict['last_5_fights'], 
-            fighter2_dict['fighter_name'], 
-            fighter2_dict['last_5_fights'], 
-            fighter1_dict['fighter_name']
-        )
-        
-        # Find common opponents and compare performances
-        common_opponents = find_common_opponents(
-            fighter1_dict['last_5_fights'], 
-            fighter2_dict['last_5_fights']
-        )
+        # Find common opponents
+        common_opponents = []
         
         # Get ranking information
         fighter1_rank = fighter1_dict.get('ranking', '')
@@ -452,12 +443,8 @@ async def predict_winner(fighter1_name: str, fighter2_name: str):
         fighter2_dict['is_champion'] = fighter2_is_champion
         fighter2_dict['weight_class'] = fighter2_weight_class
         
-        if conn:
-            conn.close()
-            conn = None
-        
         # Make prediction
-        prediction = predictor.predict_winner(fighter1_dict, fighter2_dict, head_to_head, common_opponents)
+        prediction = predictor.predict_winner(fighter1_dict, fighter2_dict, h2h_data, common_opponents)
         
         if 'error' in prediction:
             logger.error(prediction['error'])
@@ -473,7 +460,7 @@ async def predict_winner(fighter1_name: str, fighter2_name: str):
         analysis = generate_matchup_analysis(
             fighter1_dict, 
             fighter2_dict, 
-            head_to_head,
+            h2h_data,
             common_opponents,
             prediction
         )
@@ -506,23 +493,25 @@ async def predict_winner(fighter1_name: str, fighter2_name: str):
         
         # Add head-to-head information
         prediction['head_to_head'] = {
-            'fighter1_wins': head_to_head['fighter1_wins'],
-            'fighter2_wins': head_to_head['fighter2_wins'],
-            'last_winner': head_to_head.get('last_winner'),
-            'last_method': head_to_head.get('last_method', '')
+            'fighter1_wins': h2h_data.get('fighter1_wins', 0),
+            'fighter2_wins': h2h_data.get('fighter2_wins', 0),
+            'last_winner': h2h_data.get('last_winner'),
+            'last_method': h2h_data.get('last_method', ''),
+            'last_round': h2h_data.get('last_round', 'N/A'),
+            'last_time': h2h_data.get('last_time', 'N/A')
         }
         
-        return prediction
-        
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
+        # Format prediction for API response
+        result = predictor.prepare_prediction_for_api(prediction)
+        return result
+            
+    except HTTPException as he:
+        # Re-raise HTTP exceptions to maintain their status codes
+        raise he
     except Exception as e:
         logger.error(f"Error in prediction: {str(e)}")
         logger.error(traceback.format_exc())
-        if conn:
-            conn.close()
-        raise HTTPException(status_code=500, detail=f"Error making prediction: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
 @router.get("/status")
 async def model_status():
