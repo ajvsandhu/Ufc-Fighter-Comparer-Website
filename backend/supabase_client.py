@@ -62,6 +62,7 @@ class TableQuery:
         self.filter_conditions = []
         self.order_by = None
         self.order_direction = None
+        self.order_nulls_last = False
         self.limit_val = None
         self.count_param = None
         
@@ -78,9 +79,18 @@ class TableQuery:
         self.filter_conditions.append(f"{column}=neq.{value}")
         return self
         
-    def order(self, column, desc=False):
+    def ilike(self, column, value):
+        # Add case-insensitive pattern matching with proper escaping
+        safe_value = value.replace("*", "%")  # Replace * wildcards with %
+        if not safe_value.startswith("%") and not safe_value.endswith("%"):
+            safe_value = f"%{safe_value}%"  # Default to contains
+        self.filter_conditions.append(f"{column}=ilike.{safe_value}")
+        return self
+        
+    def order(self, column, desc=False, nulls_last=False):
         self.order_by = column
         self.order_direction = "desc" if desc else "asc"
+        self.order_nulls_last = nulls_last
         return self
         
     def limit(self, limit_val):
@@ -94,7 +104,10 @@ class TableQuery:
             url += "&" + "&".join(self.filter_conditions)
             
         if self.order_by:
-            url += f"&order={self.order_by}.{self.order_direction}"
+            order_param = f"&order={self.order_by}.{self.order_direction}"
+            if self.order_nulls_last:
+                order_param += ".nullslast"
+            url += order_param
             
         if self.limit_val:
             url += f"&limit={self.limit_val}"
