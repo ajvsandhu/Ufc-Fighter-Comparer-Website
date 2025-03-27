@@ -12,7 +12,7 @@ from backend.constants import (
     UNRANKED_VALUE
 )
 import traceback
-from backend.utils import sanitize_json  # Import from utils instead of main
+from backend.utils import sanitize_json, set_parent_key
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,6 +27,9 @@ def get_fighters(query: str = Query("", min_length=0)):
         if not supabase:
             logger.error("No database connection available")
             raise HTTPException(status_code=500, detail="Database connection error")
+
+        # Initialize an empty fighters list as fallback
+        fighters_list = []
 
         try:
             # Fetch fighters data from Supabase
@@ -55,27 +58,37 @@ def get_fighters(query: str = Query("", min_length=0)):
                     .limit(MAX_SEARCH_RESULTS)\
                     .execute()
             
-            if not response.data:
+            # Handle case where response or data is None
+            if not response or not hasattr(response, 'data') or not response.data:
+                logger.info(f"No fighters found for query: {query}")
                 return sanitize_json({"fighters": []})
             
             fighter_data = response.data
             logger.info(f"Found {len(fighter_data)} fighters matching query: {query}")
         except Exception as e:
             logger.error(f"Error fetching fighters: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+            return sanitize_json({"fighters": []})  # Return empty array instead of raising error
         
         fighters_list = []
         
         if not query:
             # Return all fighters with record and ranking info
             for fighter in fighter_data:
-                fighter_name = fighter.get('fighter_name', '')
-                if fighter_name is None:
-                    fighter_name = ''  # Ensure fighter_name is never None
+                # Set parent keys for important fields for enhanced sanitization
+                set_parent_key("fighter_name")
+                set_parent_key("Record")
                 
-                record = fighter.get('Record', DEFAULT_RECORD) 
-                if record is None:
-                    record = DEFAULT_RECORD  # Ensure record is never None
+                # Sanitize fighter data
+                sanitized_fighter = sanitize_json(fighter)
+                
+                # Explicitly ensure fighter_name and record are valid strings
+                fighter_name = sanitized_fighter.get('fighter_name', '')
+                if fighter_name is None or not isinstance(fighter_name, str):
+                    fighter_name = ''  # Double-check fighter_name is a valid string
+                
+                record = sanitized_fighter.get('Record', DEFAULT_RECORD) 
+                if record is None or not isinstance(record, str):
+                    record = DEFAULT_RECORD  # Double-check record is a valid string
                 
                 # Always return as a valid string
                 formatted_name = f"{fighter_name} ({record})"
@@ -85,49 +98,63 @@ def get_fighters(query: str = Query("", min_length=0)):
             query_parts = query.lower().split()
             
             for fighter in fighter_data:
-                fighter_name = fighter.get('fighter_name', '')
-                if fighter_name is None:
-                    fighter_name = ''  # Ensure fighter_name is never None
+                # Set parent keys for important fields for enhanced sanitization
+                set_parent_key("fighter_name")
+                set_parent_key("Record")
                 
-                record = fighter.get('Record', DEFAULT_RECORD)
-                if record is None:
-                    record = DEFAULT_RECORD  # Ensure record is never None
+                # Sanitize fighter data
+                sanitized_fighter = sanitize_json(fighter)
                 
-                ranking = fighter.get('ranking')
+                # Explicitly ensure fighter_name and record are valid strings
+                fighter_name = sanitized_fighter.get('fighter_name', '')
+                if fighter_name is None or not isinstance(fighter_name, str):
+                    fighter_name = ''  # Double-check fighter_name is a valid string
                 
-                # Split fighter name into parts for matching
-                name_parts = fighter_name.lower().split()
+                record = sanitized_fighter.get('Record', DEFAULT_RECORD)
+                if record is None or not isinstance(record, str):
+                    record = DEFAULT_RECORD  # Double-check record is a valid string
                 
-                # Check for matches:
-                # 1. Full name contains query
-                # 2. Any part of name starts with any query part
-                # 3. Any part of name contains any query part
-                matches = False
-                
-                # Full name contains entire query
-                if query.lower() in fighter_name.lower():
-                    matches = True
-                else:
-                    # Check if any query part matches start of any name part
-                    for q_part in query_parts:
-                        for name_part in name_parts:
-                            if name_part.startswith(q_part):
-                                matches = True
+                # Only process if fighter_name is not empty
+                if fighter_name:
+                    ranking = sanitized_fighter.get('ranking')
+                    
+                    # Split fighter name into parts for matching
+                    name_parts = fighter_name.lower().split()
+                    
+                    # Check for matches:
+                    # 1. Full name contains query
+                    # 2. Any part of name starts with any query part
+                    # 3. Any part of name contains any query part
+                    matches = False
+                    
+                    # Full name contains entire query
+                    if query.lower() in fighter_name.lower():
+                        matches = True
+                    else:
+                        # Check if any query part matches start of any name part
+                        for q_part in query_parts:
+                            for name_part in name_parts:
+                                if name_part.startswith(q_part):
+                                    matches = True
+                                    break
+                            if matches:
                                 break
-                        if matches:
-                            break
-                            
-                if matches:
-                    # Format name with record and add to results
-                    formatted_name = f"{fighter_name} ({record})"
-                    fighters_list.append(formatted_name)
+                                
+                    if matches:
+                        # Format name with record and add to results
+                        formatted_name = f"{fighter_name} ({record})"
+                        fighters_list.append(formatted_name)
+        
+        # Final safety check - ensure all items are strings
+        fighters_list = [str(name) for name in fighters_list if name]
         
         # Return result in expected format
         logger.info(f"Returning {len(fighters_list)} fighters")
         return sanitize_json({"fighters": fighters_list[:MAX_SEARCH_RESULTS]})
     except Exception as e:
         logger.error(f"Unexpected error in get_fighters: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+        # Return empty list instead of error to avoid breaking frontend
+        return sanitize_json({"fighters": []})
 
 @router.get("/fighter-stats/{fighter_name}")
 def get_fighter_stats(fighter_name: str):
@@ -171,6 +198,9 @@ def _sanitize_string(value, default=""):
             return str(value)
         except:
             return default
+    # Return empty string for "null", "undefined" or "None" strings
+    if value.lower() in ("null", "undefined", "none"):
+        return default
     return value
 
 def _sanitize_fighter_data(fighter_data):
@@ -178,31 +208,31 @@ def _sanitize_fighter_data(fighter_data):
     if not fighter_data:
         return {}
         
-    sanitized = {}
-    # Copy the data and sanitize all string fields
-    for key, value in fighter_data.items():
-        if key in ['fighter_name', 'Record', 'Height', 'Weight', 'Reach', 'STANCE', 'DOB', 'image_url']:
-            sanitized[key] = _sanitize_string(value, "")
-        else:
-            # For non-string fields, just copy the value but ensure it's not None
-            sanitized[key] = 0 if value is None and isinstance(value, (int, float)) else value
+    # For each critical field, set the parent key before sanitizing
+    for key in ['fighter_name', 'Record', 'Height', 'Weight', 'Reach', 'STANCE', 'DOB',
+               'Str. Acc.', 'Str. Def', 'TD Acc.', 'TD Def.']:
+        if key in fighter_data:
+            set_parent_key(key)
+            
+    # Apply the enhanced sanitize_json function
+    sanitized = sanitize_json(fighter_data)
             
     # Ensure critical fields exist with defaults
     if 'fighter_name' not in sanitized or not sanitized['fighter_name']:
         sanitized['fighter_name'] = ""
     if 'Record' not in sanitized or not sanitized['Record']:
         sanitized['Record'] = "0-0-0"
-    if 'Height' not in sanitized:
+    if 'Height' not in sanitized or not sanitized['Height']:
         sanitized['Height'] = ""
-    if 'Weight' not in sanitized:
+    if 'Weight' not in sanitized or not sanitized['Weight']:
         sanitized['Weight'] = ""
-    if 'Reach' not in sanitized:
+    if 'Reach' not in sanitized or not sanitized['Reach']:
         sanitized['Reach'] = ""
-    if 'STANCE' not in sanitized:
+    if 'STANCE' not in sanitized or not sanitized['STANCE']:
         sanitized['STANCE'] = ""
-    if 'DOB' not in sanitized:
+    if 'DOB' not in sanitized or not sanitized['DOB']:
         sanitized['DOB'] = ""
-    if 'image_url' not in sanitized:
+    if 'image_url' not in sanitized or not sanitized['image_url']:
         sanitized['image_url'] = ""
         
     return sanitized
@@ -211,8 +241,16 @@ def _sanitize_fighter_data(fighter_data):
 def get_fighter(fighter_name: str):
     """Get fighter by name - alias for frontend compatibility."""
     try:
-        # URL decode the fighter name
-        fighter_name = unquote(fighter_name)
+        # URL decode the fighter name and ensure it's a string
+        if fighter_name is None:
+            logger.warning("Fighter name is None")
+            raise HTTPException(status_code=400, detail="Fighter name is required")
+            
+        try:
+            fighter_name = unquote(fighter_name)
+        except Exception as e:
+            logger.error(f"Error decoding fighter name: {str(e)}")
+            # Continue with the original name if decoding fails
         
         # Log the requested fighter name to help with debugging
         logger.info(f"Fighter lookup requested for: {fighter_name}")
@@ -220,7 +258,8 @@ def get_fighter(fighter_name: str):
         supabase = get_db_connection()
         if not supabase:
             logger.error("No database connection available")
-            raise HTTPException(status_code=500, detail="Database connection error")
+            # Return empty fighter with defaults instead of error
+            return sanitize_json(_get_default_fighter(fighter_name))
         
         # Clean fighter name - remove record if present
         clean_name = fighter_name
@@ -237,7 +276,7 @@ def get_fighter(fighter_name: str):
             .eq('fighter_name', clean_name)\
             .execute()
             
-        if response.data and len(response.data) > 0:
+        if response and hasattr(response, 'data') and response.data and len(response.data) > 0:
             fighter_data = response.data[0]
             logger.info(f"Found fighter via direct match: {clean_name}")
         
@@ -248,7 +287,7 @@ def get_fighter(fighter_name: str):
                 .ilike('fighter_name', clean_name)\
                 .execute()
                 
-            if response.data and len(response.data) > 0:
+            if response and hasattr(response, 'data') and response.data and len(response.data) > 0:
                 fighter_data = response.data[0]
                 logger.info(f"Found fighter via case-insensitive match: {clean_name}")
         
@@ -260,26 +299,48 @@ def get_fighter(fighter_name: str):
                 .limit(1)\
                 .execute()
                 
-            if response.data and len(response.data) > 0:
+            if response and hasattr(response, 'data') and response.data and len(response.data) > 0:
                 fighter_data = response.data[0]
                 logger.info(f"Found fighter via partial match: {clean_name}")
         
-        # If all methods failed, raise 404
+        # If all methods failed, return a default fighter object instead of 404
         if not fighter_data:
             logger.warning(f"Fighter not found with any method: {clean_name}")
-            raise HTTPException(status_code=404, detail=f"Fighter not found: {clean_name}")
+            return sanitize_json(_get_default_fighter(clean_name))
         
-        # Sanitize all fields to ensure they are properly formatted strings
+        # Sanitize all fields to ensure proper string values
         sanitized_data = _sanitize_fighter_data(fighter_data)
         
         logger.info(f"Successfully retrieved fighter: {clean_name}")
         return sanitize_json(sanitized_data)
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error in get_fighter: {str(e)}")
         logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+        # Return a default fighter object rather than an error
+        return sanitize_json(_get_default_fighter(fighter_name if fighter_name else "Unknown Fighter"))
+
+def _get_default_fighter(name):
+    """Return a default fighter object with the given name."""
+    return {
+        "fighter_name": name,
+        "Record": "0-0-0",
+        "Height": "",
+        "Weight": "",
+        "Reach": "",
+        "STANCE": "",
+        "DOB": "",
+        "SLpM": 0.0,
+        "Str. Acc.": "0%", 
+        "SApM": 0.0,
+        "Str. Def": "0%",
+        "TD Avg.": 0.0,
+        "TD Acc.": "0%",
+        "TD Def.": "0%",
+        "Sub. Avg.": 0.0,
+        "image_url": "",
+        "ranking": 0,
+        "is_champion": False
+    }
 
 @router.get("/fighter-details/{fighter_name}")
 def get_fighter_details(fighter_name: str):

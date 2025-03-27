@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request, Body, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Request, Body, BackgroundTasks, Query, status
 import logging
 import traceback
 from backend.ml.predictor import FighterPredictor
@@ -22,7 +22,7 @@ from urllib.parse import unquote
 from pydantic import BaseModel
 from backend.ml.model_loader import get_loaded_model, get_loaded_scaler, get_loaded_features, load_model
 from backend.ml.predictor_simple import predict_winner  # Using our simpler implementation
-from backend.utils import sanitize_json  # Import from utils module instead of main
+from backend.utils import sanitize_json, set_parent_key
 
 # Set up logging
 logging.basicConfig(
@@ -216,81 +216,99 @@ def _ensure_string(value, default=""):
     return value
 
 @router.post("/predict")
-def predict_fight(fighters: FighterMatchup):
-    """Predict the outcome of a fight between two fighters."""
+async def predict_fight(request: Request, background_tasks: BackgroundTasks):
+    """
+    Predict the outcome of a fight between two fighters.
+    """
     try:
-        # Extract fighter names and normalize
-        fighter1_name = _ensure_string(fighters.fighter1, "")
-        fighter2_name = _ensure_string(fighters.fighter2, "")
+        # Parse the request body
+        body = await request.json()
+        fighter1 = body.get("fighter1")
+        fighter2 = body.get("fighter2")
         
-        if not fighter1_name.strip() or not fighter2_name.strip():
-            logger.error("Invalid fighter names provided")
-            raise HTTPException(status_code=400, detail="Both fighter names must be provided")
+        # Input validation
+        if not fighter1:
+            logger.warning("No fighter1 provided")
+            raise HTTPException(status_code=400, detail="fighter1 is required")
+        if not fighter2:
+            logger.warning("No fighter2 provided")
+            raise HTTPException(status_code=400, detail="fighter2 is required")
             
-        # Remove record details if present in fighter names
-        if "(" in fighter1_name:
-            fighter1_name = fighter1_name.split("(")[0].strip()
-        if "(" in fighter2_name:
-            fighter2_name = fighter2_name.split("(")[0].strip()
+        logger.info(f"Prediction requested for {fighter1} vs {fighter2}")
+        
+        # Clean the fighter names - remove record in parentheses if present
+        if isinstance(fighter1, str) and "(" in fighter1:
+            fighter1 = fighter1.split("(")[0].strip()
+        if isinstance(fighter2, str) and "(" in fighter2:
+            fighter2 = fighter2.split("(")[0].strip()
             
-        logger.info(f"Predicting fight between {fighter1_name} and {fighter2_name}")
+        logger.info(f"Cleaned fighter names: {fighter1} vs {fighter2}")
         
-        # Use predictor to get prediction
-        predictor = FighterPredictor()
-        
-        # Get fighter data
-        fighter1_data = predictor._get_fighter_data(fighter1_name)
-        fighter2_data = predictor._get_fighter_data(fighter2_name)
-        
-        if not fighter1_data:
-            raise HTTPException(status_code=404, detail=f"Fighter not found: {fighter1_name}")
-        if not fighter2_data:
-            raise HTTPException(status_code=404, detail=f"Fighter not found: {fighter2_name}")
+        # Get database connection
+        supabase = get_db_connection()
+        if not supabase:
+            logger.error("Database connection failed")
+            raise HTTPException(status_code=500, detail="Database connection error")
             
-        # Check for head-to-head history
-        head_to_head = check_head_to_head(fighter1_name, fighter2_name)
-        
-        # Find common opponents
-        common_opponents = find_common_opponents(fighter1_data, fighter2_data)
-        
-        # Get prediction
-        prediction = predictor.predict_winner(fighter1_data, fighter2_data, head_to_head, common_opponents)
-        
-        # Check for errors in prediction
-        if 'error' in prediction:
-            raise HTTPException(status_code=500, detail=prediction['error'])
+        # Try to get a prediction
+        try:
+            predictor = _get_predictor()
+            result = predictor.predict_fight(fighter1, fighter2)
             
-        # Prepare response for API - ensuring all keys are properly formatted
-        response = predictor.prepare_prediction_for_api(prediction)
-        
-        # Additional safeguards for frontend - ensure all fields that might be used with string methods are strings
-        if 'fighter1' in response:
-            response['fighter1']['name'] = _ensure_string(response['fighter1'].get('name', ''))
-            response['fighter1']['win_probability'] = _ensure_string(response['fighter1'].get('win_probability', '0%'))
-            response['fighter1']['record'] = _ensure_string(response['fighter1'].get('record', '0-0-0'))
-            response['fighter1']['image_url'] = _ensure_string(response['fighter1'].get('image_url', ''))
+            if not result:
+                logger.warning(f"No prediction result for {fighter1} vs {fighter2}")
+                raise HTTPException(status_code=404, detail=f"Could not predict fight between {fighter1} and {fighter2}")
+                
+            logger.info(f"Prediction result: {result}")
             
-        if 'fighter2' in response:
-            response['fighter2']['name'] = _ensure_string(response['fighter2'].get('name', ''))
-            response['fighter2']['win_probability'] = _ensure_string(response['fighter2'].get('win_probability', '0%'))
-            response['fighter2']['record'] = _ensure_string(response['fighter2'].get('record', '0-0-0'))
-            response['fighter2']['image_url'] = _ensure_string(response['fighter2'].get('image_url', ''))
+            # Schedule an async task to log this prediction in the database
+            # This won't block the response
+            background_tasks.add_task(
+                log_prediction, 
+                fighter1, 
+                fighter2, 
+                result.get("predicted_winner", "unknown"), 
+                result.get("confidence", 0)
+            )
             
-        response['winner'] = _ensure_string(response.get('winner', ''))
-        response['loser'] = _ensure_string(response.get('loser', ''))
-        response['winner_probability'] = _ensure_string(response.get('winner_probability', '0%'))
-        
-        if 'head_to_head' in response:
-            response['head_to_head']['last_winner'] = _ensure_string(response['head_to_head'].get('last_winner', ''))
-            response['head_to_head']['last_method'] = _ensure_string(response['head_to_head'].get('last_method', ''))
-            response['head_to_head']['last_round'] = _ensure_string(response['head_to_head'].get('last_round', ''))
-            response['head_to_head']['last_time'] = _ensure_string(response['head_to_head'].get('last_time', ''))
+            # Return the sanitized prediction
+            return _sanitize_prediction_result(result)
             
-        return sanitize_json(response)
+        except Exception as e:
+            logger.error(f"Error during prediction: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # Try the simple predictor as fallback
+            try:
+                logger.info("Trying simple predictor as fallback")
+                simple_predictor = _get_simple_predictor()
+                result = simple_predictor.predict_fight(fighter1, fighter2)
+                
+                if result:
+                    logger.info(f"Simple predictor result: {result}")
+                    
+                    # Log this prediction
+                    background_tasks.add_task(
+                        log_prediction, 
+                        fighter1, 
+                        fighter2, 
+                        result.get("predicted_winner", "unknown"), 
+                        result.get("confidence", 0)
+                    )
+                    
+                    # Return the sanitized prediction
+                    return _sanitize_prediction_result(result)
+            except Exception as inner_e:
+                logger.error(f"Fallback predictor also failed: {str(inner_e)}")
+            
+            # If we got here, both predictors failed
+            raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+            
     except HTTPException:
+        # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error(f"Error predicting fight: {str(e)}")
+        logger.error(f"Unexpected error in predict_fight: {str(e)}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
@@ -363,4 +381,32 @@ async def model_status():
         "model_loaded": predictor.model is not None,
         "model_path": MODEL_PATH if predictor.model else None,
         "config": get_config()
-    }) 
+    })
+
+def _sanitize_prediction_result(result):
+    """
+    Sanitize prediction result to prevent client-side errors.
+    """
+    if not result:
+        return {}
+    
+    # Set parent keys for critical fields
+    for key in ['fighter1_name', 'fighter2_name', 'predicted_winner', 'confidence']:
+        if key in result:
+            set_parent_key(key)
+    
+    # Apply enhanced sanitization with proper context
+    sanitized = sanitize_json(result)
+    
+    # Ensure critical fields exist with defaults
+    for key in ['fighter1_name', 'fighter2_name', 'predicted_winner']:
+        if key not in sanitized or not sanitized[key]:
+            sanitized[key] = ""
+    
+    # Ensure confidence is a valid number string
+    if 'confidence' not in sanitized or not isinstance(sanitized['confidence'], (int, float, str)):
+        sanitized['confidence'] = "0"
+    elif isinstance(sanitized['confidence'], (int, float)):
+        sanitized['confidence'] = str(round(sanitized['confidence'], 2))
+        
+    return sanitized 

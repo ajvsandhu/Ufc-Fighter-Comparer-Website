@@ -8,6 +8,9 @@ import logging
 import traceback
 import json
 import time
+from fastapi.exceptions import RequestValidationError
+from starlette.responses import RedirectResponse
+from typing import Callable
 
 from backend.constants import (
     APP_TITLE, 
@@ -121,6 +124,35 @@ app.add_middleware(
 # Log CORS configuration
 logger.info(f"CORS configured with origins: {CORS_ORIGINS}")
 
+# Add middleware to sanitize all JSON responses
+@app.middleware("http")
+async def sanitize_json_response(request: Request, call_next: Callable):
+    """Middleware to sanitize all JSON responses."""
+    response = await call_next(request)
+    
+    # Only process JSON responses
+    if response.headers.get("content-type") == "application/json":
+        try:
+            # Get the original response body
+            original_response = [chunk async for chunk in response.body_iterator]
+            response.body_iterator = iter([original_response[0]])
+            
+            # Parse and sanitize the JSON
+            response_body = json.loads(original_response[0].decode())
+            sanitized_body = sanitize_json(response_body)
+            
+            # Create a new response with sanitized data
+            return JSONResponse(
+                content=sanitized_body,
+                status_code=response.status_code,
+                headers=dict(response.headers)
+            )
+        except Exception as e:
+            logger.error(f"Error sanitizing response: {str(e)}")
+    
+    # Return the original response for non-JSON responses or if sanitization fails
+    return response
+
 # Import route modules directly to avoid circular imports
 from backend.api.routes.fighters import router as fighters_router
 from backend.api.routes.predictions import router as predictions_router
@@ -196,6 +228,14 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content=sanitized_data
+    )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    """Handle validation errors and return a clean error message."""
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content=sanitize_json({"detail": str(exc)}),
     )
 
 # Run the API with uvicorn when script is executed directly
