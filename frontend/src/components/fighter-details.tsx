@@ -179,18 +179,12 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
   // Fetch fighter data and fight history
   React.useEffect(() => {
     const fetchFighterData = async () => {
-      if (!fighterName || fighterName === 'undefined') {
-        setError('Invalid fighter name');
-        setIsLoading(false);
-        return;
-      }
-
       setIsLoading(true);
-      setError(null);
+      setError('');
 
       try {
-        // Log the API call for debugging
         console.log(`Fetching fighter data for: ${fighterName}`);
+        console.log(`Using endpoint: ${ENDPOINTS.FIGHTER(fighterName)}`);
         
         const response = await fetch(ENDPOINTS.FIGHTER(fighterName));
         if (!response.ok) {
@@ -200,54 +194,44 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
         const data = await response.json();
         console.log("Raw fighter data received:", data);
         
-        // FIXED: Check specifically for last_5_fights in the response
-        let fightHistoryData: FightHistory[] = [];
-        
-        // Log all keys in the response for debugging
+        // Log all keys in the response to help debugging
         console.log("Response data keys:", Object.keys(data));
         
-        // Direct access to the last_5_fights field which comes from the fighter_last_5_fights table
-        if (data && data.last_5_fights) {
-          console.log("Found last_5_fights:", data.last_5_fights);
-          fightHistoryData = Array.isArray(data.last_5_fights) ? data.last_5_fights : [data.last_5_fights];
-        } else if (data && data.fight_history) {
-          console.log("Found fight_history:", data.fight_history);
-          fightHistoryData = Array.isArray(data.fight_history) ? data.fight_history : [data.fight_history];
-        } else if (data && data.fights) {
-          console.log("Found fights:", data.fights);
-          fightHistoryData = Array.isArray(data.fights) ? data.fights : [data.fights];
+        // Check for fight history data
+        if (data.last_5_fights) {
+          console.log(`Found ${data.last_5_fights.length} fights in the response:`, data.last_5_fights);
+        } else {
+          console.warn("No last_5_fights found in the response");
         }
         
-        console.log("Fight history data before processing:", fightHistoryData);
-        
-        // Map and sanitize fight history data
-        const processedFightHistory = fightHistoryData.map((fight: any) => {
-          // Log each fight for debugging
-          console.log("Processing fight:", fight);
+        // Map and sanitize fight history data if available
+        const processedFightHistory = Array.isArray(data.last_5_fights) 
+          ? data.last_5_fights.map((fight: any) => {
+              console.log("Processing fight:", fight);
+              return {
+                opponent_name: String(fight?.opponent_name || fight?.opponent || 'Unknown Opponent'),
+                opponent_display_name: String(fight?.opponent_display_name || fight?.opponent || 'Unknown Opponent'),
+                result: String(fight?.result || 'NC'),
+                method: String(fight?.method || 'N/A'),
+                round: Number(fight?.round || 0),
+                time: String(fight?.time || '0:00'),
+                event: String(fight?.event || 'Unknown Event'),
+                date: String(fight?.date || 'Unknown Date'),
+                opponent_stats: fight?.opponent_stats,
+                kd: String(fight?.kd || '0'),
+                sig_str: String(fight?.sig_str || '0/0'),
+                sig_str_pct: String(fight?.sig_str_pct || '0%'),
+                total_str: String(fight?.total_str || '0/0'),
+                head_str: String(fight?.head_str || '0/0'),
+                body_str: String(fight?.body_str || '0/0'),
+                leg_str: String(fight?.leg_str || '0/0'),
+                takedowns: String(fight?.takedowns || '0/0'),
+                td_pct: String(fight?.td_pct || '0%'),
+                ctrl: String(fight?.ctrl || '0:00'),
+              };
+            })
+          : [];
           
-          return {
-            opponent_name: String(fight?.opponent_name || fight?.opponent || 'Unknown Opponent'),
-            opponent_display_name: String(fight?.opponent_display_name || fight?.opponent || 'Unknown Opponent'),
-            result: String(fight?.result || 'NC'),
-            method: String(fight?.method || 'N/A'),
-            round: Number(fight?.round || 0),
-            time: String(fight?.time || '0:00'),
-            event: String(fight?.event || 'Unknown Event'),
-            date: String(fight?.date || 'Unknown Date'),
-            opponent_stats: fight?.opponent_stats,
-            kd: String(fight?.kd || '0'),
-            sig_str: String(fight?.sig_str || '0/0'),
-            sig_str_pct: String(fight?.sig_str_pct || '0%'),
-            total_str: String(fight?.total_str || '0/0'),
-            head_str: String(fight?.head_str || '0/0'),
-            body_str: String(fight?.body_str || '0/0'),
-            leg_str: String(fight?.leg_str || '0/0'),
-            takedowns: String(fight?.takedowns || '0/0'),
-            td_pct: String(fight?.td_pct || '0%'),
-            ctrl: String(fight?.ctrl || '0:00'),
-          };
-        });
-        
         console.log("Processed fight history:", processedFightHistory);
         
         // Properly map API fields to our expected structure
@@ -270,7 +254,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
           sub_avg: data?.['Sub. Avg.'] || data?.sub_avg || DEFAULT_VALUE,
           weight_class: data?.weight_class || '',
           nickname: data?.nickname || '',
-          last_5_fights: processedFightHistory, // Store the processed fight history
+          last_5_fights: processedFightHistory, // Use the processed fight history
           ranking: data?.ranking || UNRANKED_VALUE,
           tap_link: data?.tap_link || '',
         };
@@ -288,26 +272,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
         setFightHistory(processedFightHistory);
       } catch (err) {
         console.error('Error fetching fighter:', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch fighter data');
-        // Set default empty stats to avoid UI crashes
-        setStats({
-          name: fighterName || '',
-          image_url: DEFAULT_PLACEHOLDER_IMAGE,
-          record: DEFAULT_VALUE,
-          height: DEFAULT_VALUE,
-          weight: DEFAULT_VALUE,
-          reach: DEFAULT_VALUE,
-          stance: DEFAULT_VALUE,
-          dob: '',
-          slpm: DEFAULT_VALUE,
-          str_acc: DEFAULT_PERCENTAGE,
-          sapm: DEFAULT_VALUE,
-          str_def: DEFAULT_PERCENTAGE,
-          td_avg: DEFAULT_VALUE,
-          td_acc: DEFAULT_PERCENTAGE,
-          td_def: DEFAULT_PERCENTAGE,
-          sub_avg: DEFAULT_VALUE,
-        });
+        setError('Failed to load fighter data. Please try again later.');
       } finally {
         setIsLoading(false);
       }
@@ -441,103 +406,124 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
         </div>
       ) : (
         <div className="space-y-4">
-          {fightHistory.map((fight, index) => (
-            <Card key={`${fight.opponent_name}-${fight.date}-${index}`} className="overflow-hidden">
-              <CardContent className="p-0">
-                <div 
-                  className={`p-4 cursor-pointer hover:bg-accent/10 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                    expandedFight === index ? 'bg-accent/10' : ''
-                  }`}
-                  onClick={() => setExpandedFight(expandedFight === index ? null : index)}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-4 h-4 rounded-full ${
-                      fight.result.toLowerCase() === 'win' ? 'bg-green-500' : 
-                      fight.result.toLowerCase() === 'loss' ? 'bg-red-500' : 
-                      'bg-yellow-500'
-                    }`} />
-                    <div>
-                      <p className="font-medium">{fight.opponent_display_name || fight.opponent_name}</p>
-                      <p className="text-sm text-muted-foreground">{fight.date}</p>
+          {fightHistory.map((fight, index) => {
+            // Ensure fight object is valid
+            if (!fight) return null;
+            
+            return (
+              <Card key={`${fight.opponent_name || 'opponent'}-${fight.date || index}`} className="overflow-hidden">
+                <CardContent className="p-0">
+                  <div 
+                    className={`p-4 cursor-pointer hover:bg-accent/10 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                      expandedFight === index ? 'bg-accent/10' : ''
+                    }`}
+                    onClick={() => setExpandedFight(expandedFight === index ? null : index)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-4 h-4 rounded-full ${
+                        fight.result?.toLowerCase() === 'win' ? 'bg-green-500' : 
+                        fight.result?.toLowerCase() === 'loss' ? 'bg-red-500' : 
+                        'bg-yellow-500'
+                      }`} />
+                      <div>
+                        <p className="font-medium">{fight.opponent_display_name || fight.opponent_name || fight.opponent || 'Opponent'}</p>
+                        <p className="text-sm text-muted-foreground">{fight.date || 'Unknown Date'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <div>
+                        <p className="text-sm">Method</p>
+                        <p className="font-medium">{fight.method || 'Unknown'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm">Round</p>
+                        <p className="font-medium">{fight.round || '--'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm">Time</p>
+                        <p className="font-medium">{fight.time || '--'}</p>
+                      </div>
+                      <div>
+                        <ChevronDown
+                          className={`h-5 w-5 transition-transform ${
+                            expandedFight === index ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-6">
-                    <div>
-                      <p className="text-sm">Method</p>
-                      <p className="font-medium">{fight.method}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm">Round</p>
-                      <p className="font-medium">{fight.round}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm">Time</p>
-                      <p className="font-medium">{fight.time}</p>
-                    </div>
-                    <div>
-                      <ChevronDown
-                        className={`h-5 w-5 transition-transform ${
-                          expandedFight === index ? 'rotate-180' : ''
-                        }`}
-                      />
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Expanded fight stats */}
-                {expandedFight === index && (
-                  <div className="px-4 py-6 border-t border-border bg-accent/5">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Knockdowns</p>
-                        <p className="font-medium">{fight.kd}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Sig. Strikes</p>
-                        <p className="font-medium">{fight.sig_str} ({fight.sig_str_pct})</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Total Strikes</p>
-                        <p className="font-medium">{fight.total_str}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Takedowns</p>
-                        <p className="font-medium">{fight.takedowns} ({fight.td_pct})</p>
-                      </div>
-                    </div>
-                    {(fight.head_str || fight.body_str || fight.leg_str) && (
-                      <div className="mt-4 border-t border-border/50 pt-4">
-                        <h5 className="font-medium mb-2">Strike Distribution</h5>
-                        <div className="grid grid-cols-3 gap-4">
+                  
+                  {/* Expanded fight stats */}
+                  {expandedFight === index && (
+                    <div className="px-4 py-6 border-t border-border bg-accent/5">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                        {fight.kd && (
                           <div>
-                            <p className="text-sm text-muted-foreground">Head</p>
-                            <p className="font-medium">{fight.head_str}</p>
+                            <p className="text-sm text-muted-foreground">Knockdowns</p>
+                            <p className="font-medium">{fight.kd}</p>
                           </div>
+                        )}
+                        {fight.sig_str && (
                           <div>
-                            <p className="text-sm text-muted-foreground">Body</p>
-                            <p className="font-medium">{fight.body_str}</p>
+                            <p className="text-sm text-muted-foreground">Sig. Strikes</p>
+                            <p className="font-medium">{fight.sig_str} {fight.sig_str_pct ? `(${fight.sig_str_pct})` : ''}</p>
                           </div>
+                        )}
+                        {fight.total_str && (
                           <div>
-                            <p className="text-sm text-muted-foreground">Leg</p>
-                            <p className="font-medium">{fight.leg_str}</p>
+                            <p className="text-sm text-muted-foreground">Total Strikes</p>
+                            <p className="font-medium">{fight.total_str}</p>
+                          </div>
+                        )}
+                        {fight.takedowns && (
+                          <div>
+                            <p className="text-sm text-muted-foreground">Takedowns</p>
+                            <p className="font-medium">{fight.takedowns} {fight.td_pct ? `(${fight.td_pct})` : ''}</p>
+                          </div>
+                        )}
+                      </div>
+                      {(fight.head_str || fight.body_str || fight.leg_str) && (
+                        <div className="mt-4 border-t border-border/50 pt-4">
+                          <h5 className="font-medium mb-2">Strike Distribution</h5>
+                          <div className="grid grid-cols-3 gap-4">
+                            {fight.head_str && (
+                              <div>
+                                <p className="text-sm text-muted-foreground">Head</p>
+                                <p className="font-medium">{fight.head_str}</p>
+                              </div>
+                            )}
+                            {fight.body_str && (
+                              <div>
+                                <p className="text-sm text-muted-foreground">Body</p>
+                                <p className="font-medium">{fight.body_str}</p>
+                              </div>
+                            )}
+                            {fight.leg_str && (
+                              <div>
+                                <p className="text-sm text-muted-foreground">Leg</p>
+                                <p className="font-medium">{fight.leg_str}</p>
+                              </div>
+                            )}
                           </div>
                         </div>
-                      </div>
-                    )}
-                    {fight.ctrl && fight.ctrl !== '0:00' && (
-                      <div className="mt-4 border-t border-border/50 pt-4">
-                        <p className="text-sm text-muted-foreground">Control Time</p>
-                        <p className="font-medium">{fight.ctrl}</p>
-                      </div>
-                    )}
-                    <div className="mt-4 border-t border-border/50 pt-4 text-sm text-muted-foreground">
-                      <p>{fight.event}</p>
+                      )}
+                      {fight.ctrl && fight.ctrl !== '0:00' && (
+                        <div className="mt-4 border-t border-border/50 pt-4">
+                          <p className="text-sm text-muted-foreground">Control Time</p>
+                          <p className="font-medium">{fight.ctrl}</p>
+                        </div>
+                      )}
+                      {fight.event && (
+                        <div className="mt-4 border-t border-border/50 pt-4 text-sm text-muted-foreground">
+                          <p>{fight.event}</p>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

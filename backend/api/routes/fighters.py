@@ -334,28 +334,26 @@ def get_fighter(fighter_name: str):
             logger.warning(f"Fighter not found with any method: {clean_name}")
             return sanitize_json(_get_default_fighter(clean_name))
         
-        # FIXED: Fetch the last 5 fights for the fighter
-        fighter_id = fighter_data.get('id')
+        # FIXED: Simplify the query to directly match on fighter_name
         last_5_fights = []
-        
-        if fighter_id:
-            try:
-                logger.info(f"Fetching last 5 fights for fighter ID: {fighter_id}")
-                fights_response = supabase.table('fighter_last_5_fights')\
-                    .select('*')\
-                    .eq('fighter_id', fighter_id)\
-                    .order('date', desc=True)\
-                    .limit(MAX_FIGHTS_DISPLAY)\
-                    .execute()
-                
-                if fights_response and hasattr(fights_response, 'data') and fights_response.data:
-                    last_5_fights = fights_response.data
-                    logger.info(f"Found {len(last_5_fights)} fights for fighter ID {fighter_id}")
-                else:
-                    logger.warning(f"No fights found for fighter ID {fighter_id}")
-            except Exception as e:
-                logger.error(f"Error fetching fights for fighter ID {fighter_id}: {str(e)}")
-                # Continue even if we can't get fights
+        try:
+            logger.info(f"Directly fetching last 5 fights for fighter name: {clean_name}")
+            
+            # Simple direct query using fighter_name instead of fighter_id
+            fights_response = supabase.table('fighter_last_5_fights')\
+                .select('*')\
+                .eq('fighter_name', clean_name)\
+                .limit(MAX_FIGHTS_DISPLAY)\
+                .execute()
+            
+            if fights_response and hasattr(fights_response, 'data') and fights_response.data:
+                last_5_fights = fights_response.data
+                logger.info(f"Found {len(last_5_fights)} fights for fighter {clean_name}")
+            else:
+                logger.warning(f"No fights found for fighter {clean_name}")
+        except Exception as e:
+            logger.error(f"Error fetching fights for fighter {clean_name}: {str(e)}")
+            # Continue even if we can't get fights
         
         # Add the last 5 fights to the fighter data
         fighter_data['last_5_fights'] = last_5_fights
