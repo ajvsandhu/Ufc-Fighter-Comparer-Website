@@ -4,10 +4,11 @@ This module handles the connection to Supabase and provides database operations.
 """
 
 import os
+import json
+import requests
 from typing import Dict, List, Any, Optional, Tuple
 import logging
 import traceback
-from supabase import create_client, Client
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -24,10 +25,170 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     logger.error("Supabase URL or Key not found in environment variables")
     raise ValueError("Supabase URL or Key not found in environment variables. Please check your .env file.")
 
-# Connect to Supabase
+# Custom Supabase client implementation using requests
+class SupabaseClient:
+    def __init__(self, supabase_url, supabase_key):
+        self.url = supabase_url.rstrip('/')
+        self.key = supabase_key
+        self.headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json"
+        }
+        
+    def table(self, table_name):
+        return TableQuery(self, table_name)
+
+    def test_connection(self):
+        """Test connection to Supabase"""
+        try:
+            response = requests.get(
+                f"{self.url}/rest/v1/fighters?limit=1&select=*",
+                headers=self.headers
+            )
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to connect to Supabase: {e}")
+            return False
+
+class TableQuery:
+    def __init__(self, client, table_name):
+        self.client = client
+        self.table_name = table_name
+        self.query_params = {}
+        self.url = f"{client.url}/rest/v1/{table_name}"
+        self.select_query = "*"
+        self.filter_conditions = []
+        self.order_by = None
+        self.order_direction = None
+        self.limit_val = None
+        self.count_param = None
+        
+    def select(self, query="*", count=None):
+        self.select_query = query
+        self.count_param = count
+        return self
+        
+    def eq(self, column, value):
+        self.filter_conditions.append(f"{column}=eq.{value}")
+        return self
+        
+    def neq(self, column, value):
+        self.filter_conditions.append(f"{column}=neq.{value}")
+        return self
+        
+    def order(self, column, desc=False):
+        self.order_by = column
+        self.order_direction = "desc" if desc else "asc"
+        return self
+        
+    def limit(self, limit_val):
+        self.limit_val = limit_val
+        return self
+        
+    def _build_url(self):
+        url = f"{self.url}?select={self.select_query}"
+        
+        if self.filter_conditions:
+            url += "&" + "&".join(self.filter_conditions)
+            
+        if self.order_by:
+            url += f"&order={self.order_by}.{self.order_direction}"
+            
+        if self.limit_val:
+            url += f"&limit={self.limit_val}"
+            
+        if self.count_param:
+            url += f"&count={self.count_param}"
+            
+        return url
+        
+    def execute(self):
+        try:
+            url = self._build_url()
+            response = requests.get(url, headers=self.client.headers)
+            response.raise_for_status()
+            data = response.json()
+            count = int(response.headers.get('content-range', '0-0/0').split('/')[1])
+            return QueryResponse(data, count)
+        except Exception as e:
+            logger.error(f"Error executing query: {e}")
+            return QueryResponse([], 0)
+            
+    def insert(self, data):
+        try:
+            response = requests.post(
+                self.url,
+                headers=self.client.headers,
+                json=data if isinstance(data, list) else [data]
+            )
+            response.raise_for_status()
+            return QueryResponse(response.json(), len(response.json()))
+        except Exception as e:
+            logger.error(f"Error inserting data: {e}")
+            return QueryResponse([], 0)
+            
+    def update(self, data):
+        try:
+            url = self.url
+            if self.filter_conditions:
+                url += "?" + "&".join(self.filter_conditions)
+                
+            response = requests.patch(
+                url,
+                headers=self.client.headers,
+                json=data
+            )
+            response.raise_for_status()
+            return QueryResponse(response.json(), len(response.json()))
+        except Exception as e:
+            logger.error(f"Error updating data: {e}")
+            return QueryResponse([], 0)
+            
+    def upsert(self, data, on_conflict=None):
+        try:
+            url = f"{self.url}"
+            if on_conflict:
+                url += f"?on_conflict={on_conflict}"
+                
+            response = requests.post(
+                url,
+                headers=self.client.headers,
+                json=data if isinstance(data, list) else [data],
+                params={"upsert": "true"}
+            )
+            response.raise_for_status()
+            return QueryResponse(response.json(), len(response.json()))
+        except Exception as e:
+            logger.error(f"Error upserting data: {e}")
+            return QueryResponse([], 0)
+            
+    def delete(self):
+        try:
+            url = self.url
+            if self.filter_conditions:
+                url += "?" + "&".join(self.filter_conditions)
+                
+            response = requests.delete(
+                url,
+                headers=self.client.headers
+            )
+            response.raise_for_status()
+            return QueryResponse(response.json(), len(response.json()))
+        except Exception as e:
+            logger.error(f"Error deleting data: {e}")
+            return QueryResponse([], 0)
+
+class QueryResponse:
+    def __init__(self, data, count):
+        self.data = data
+        self.count = count
+
+# Create a Supabase client
 try:
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    logger.info(f"Initialized Supabase client with URL: {SUPABASE_URL}")
+    supabase = SupabaseClient(SUPABASE_URL, SUPABASE_KEY)
+    logger.info(f"Initialized custom Supabase client with URL: {SUPABASE_URL}")
 except Exception as e:
     logger.error(f"Failed to create Supabase client: {e}")
     raise ValueError(f"Failed to create Supabase client: {e}")
@@ -35,11 +196,12 @@ except Exception as e:
 def test_connection() -> bool:
     """Test the connection to Supabase"""
     try:
-        # Don't use count(*) - it causes errors
-        response = supabase.table("fighters").select("*", count="exact").limit(1).execute()
-        count = response.count if hasattr(response, "count") else 0
-        logger.info(f"Connected to Supabase - Found {count} fighters")
-        return True
+        if supabase.test_connection():
+            logger.info("Connected to Supabase successfully")
+            return True
+        else:
+            logger.error("Failed to connect to Supabase")
+            return False
     except Exception as e:
         logger.error(f"Failed to connect to Supabase: {e}")
         logger.error(traceback.format_exc())
