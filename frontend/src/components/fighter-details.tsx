@@ -195,10 +195,63 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
         }
 
         const data = await response.json();
-        setStats(data);
-        setFightHistory(data.last_5_fights || []);
+        
+        // Sanitize the fighter data to prevent UI crashes
+        const sanitizedData = {
+          name: data?.name || fighterName || '',
+          image_url: data?.image_url || DEFAULT_PLACEHOLDER_IMAGE,
+          record: data?.record || DEFAULT_VALUE,
+          height: data?.height || DEFAULT_VALUE,
+          weight: data?.weight || DEFAULT_VALUE,
+          reach: data?.reach || DEFAULT_VALUE,
+          stance: data?.stance || DEFAULT_VALUE,
+          dob: data?.dob || '',
+          slpm: data?.slpm || DEFAULT_VALUE,
+          str_acc: data?.str_acc || DEFAULT_PERCENTAGE,
+          sapm: data?.sapm || DEFAULT_VALUE,
+          str_def: data?.str_def || DEFAULT_PERCENTAGE,
+          td_avg: data?.td_avg || DEFAULT_VALUE,
+          td_acc: data?.td_acc || DEFAULT_PERCENTAGE,
+          td_def: data?.td_def || DEFAULT_PERCENTAGE,
+          sub_avg: data?.sub_avg || DEFAULT_VALUE,
+          weight_class: data?.weight_class || '',
+          nickname: data?.nickname || '',
+          last_5_fights: Array.isArray(data?.last_5_fights) ? data.last_5_fights : [],
+          ranking: data?.ranking || UNRANKED_VALUE,
+          tap_link: data?.tap_link || '',
+        };
+        
+        // Ensure string values for all fields that might be used with string methods
+        Object.keys(sanitizedData).forEach(key => {
+          if (key !== 'last_5_fights' && key !== 'ranking' && sanitizedData[key] === null) {
+            sanitizedData[key] = typeof sanitizedData[key] === 'number' ? String(sanitizedData[key]) : '';
+          }
+        });
+        
+        setStats(sanitizedData);
+        setFightHistory(Array.isArray(data?.last_5_fights) ? data.last_5_fights : []);
       } catch (err) {
+        console.error('Error fetching fighter:', err);
         setError(err instanceof Error ? err.message : 'Failed to fetch fighter data');
+        // Set default empty stats to avoid UI crashes
+        setStats({
+          name: fighterName || '',
+          image_url: DEFAULT_PLACEHOLDER_IMAGE,
+          record: DEFAULT_VALUE,
+          height: DEFAULT_VALUE,
+          weight: DEFAULT_VALUE,
+          reach: DEFAULT_VALUE,
+          stance: DEFAULT_VALUE,
+          dob: '',
+          slpm: DEFAULT_VALUE,
+          str_acc: DEFAULT_PERCENTAGE,
+          sapm: DEFAULT_VALUE,
+          str_def: DEFAULT_PERCENTAGE,
+          td_avg: DEFAULT_VALUE,
+          td_acc: DEFAULT_PERCENTAGE,
+          td_def: DEFAULT_PERCENTAGE,
+          sub_avg: DEFAULT_VALUE,
+        });
       } finally {
         setIsLoading(false);
       }

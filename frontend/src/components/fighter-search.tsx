@@ -49,14 +49,14 @@ export function FighterSearch({ onSelectFighter, clearSearch }: FighterSearchPro
   // Fetch fighters when search term changes
   React.useEffect(() => {
     if (!searchTerm.trim()) {
-      setFighters([])
-      setShowSuggestions(false)
-      return
+      setFighters([]);
+      setShowSuggestions(false);
+      return;
     }
 
     const fetchFighters = async () => {
-      setIsLoading(true)
-      setError(null)
+      setIsLoading(true);
+      setError(null);
 
       try {
         const response = await fetch(ENDPOINTS.FIGHTERS_SEARCH(searchTerm.trim()), {
@@ -64,40 +64,59 @@ export function FighterSearch({ onSelectFighter, clearSearch }: FighterSearchPro
           headers: {
             'Accept': 'application/json',
           }
-        })
+        });
         
         if (!response.ok) {
-          throw new Error('Failed to fetch fighters')
+          throw new Error('Failed to fetch fighters');
         }
         
-        const data = await response.json()
+        const data = await response.json();
+        
+        // Add extra safety checks for the fighters data
+        let fightersList: string[] = [];
+        if (data && data.fighters && Array.isArray(data.fighters)) {
+          // Filter out any null or undefined values and ensure all items are strings
+          fightersList = data.fighters
+            .filter((fighter: any) => fighter != null)
+            .map((fighter: any) => String(fighter));
+        }
+        
         // Limit to 5 suggestions
-        setFighters((data.fighters || []).slice(0, 5))
-        setShowSuggestions(true)
+        setFighters(fightersList.slice(0, 5));
+        setShowSuggestions(true);
       } catch (err) {
-        console.error('Search error:', err)
-        setError(err instanceof Error ? err.message : 'Failed to fetch fighters')
-        setFighters([])
+        console.error('Search error:', err);
+        setError(err instanceof Error ? err.message : 'Failed to fetch fighters');
+        setFighters([]);
       } finally {
-        setIsLoading(false)
+        setIsLoading(false);
       }
     }
 
-    const debounceTimer = setTimeout(fetchFighters, 300)
-    return () => clearTimeout(debounceTimer)
-  }, [searchTerm])
+    const debounceTimer = setTimeout(fetchFighters, 300);
+    return () => clearTimeout(debounceTimer);
+  }, [searchTerm]);
 
   const formatFighterDisplay = (fighter: string) => {
-    if (!fighter.includes('(')) return fighter
+    // Add safety check for fighter being undefined or null
+    if (!fighter) return '';
+    
+    if (!fighter.includes('(')) return fighter;
 
-    const [baseName, ...rest] = fighter.split('(')
-    const info = '(' + rest.join('(')
-    return (
-      <div className="flex flex-col">
-        <span className="font-medium">{baseName.trim()}</span>
-        <span className="text-sm text-muted-foreground">{info}</span>
-      </div>
-    )
+    try {
+      const [baseName, ...rest] = fighter.split('(');
+      const info = '(' + rest.join('(');
+      return (
+        <div className="flex flex-col">
+          <span className="font-medium">{baseName.trim()}</span>
+          <span className="text-sm text-muted-foreground">{info}</span>
+        </div>
+      );
+    } catch (err) {
+      // If any error occurs, return the fighter name as-is
+      console.error('Error formatting fighter name:', err);
+      return fighter;
+    }
   }
 
   return (

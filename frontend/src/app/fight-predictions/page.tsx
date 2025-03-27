@@ -76,9 +76,58 @@ export default function FightPredictionsPage() {
 
   const fetchFighterData = async (fighterName: string): Promise<FighterStats | null> => {
     try {
+      if (!fighterName || fighterName === 'undefined') {
+        toast({
+          title: 'Error',
+          description: 'Invalid fighter name',
+          variant: 'destructive',
+        });
+        return null;
+      }
+      
       const response = await fetch(ENDPOINTS.FIGHTER(fighterName));
       if (!response.ok) throw new Error('Fighter not found');
-      return await response.json();
+      
+      const data = await response.json();
+      
+      // Sanitize the data to prevent UI crashes
+      const sanitizedData: FighterStats = {
+        name: data?.name || fighterName || '',
+        image_url: data?.image_url || '',
+        record: data?.record || '',
+        height: data?.height || '',
+        weight: data?.weight || '',
+        reach: data?.reach || '',
+        stance: data?.stance || '',
+        slpm: data?.slpm || '0',
+        str_acc: data?.str_acc || '0%',
+        sapm: data?.sapm || '0',
+        str_def: data?.str_def || '0%',
+        td_avg: data?.td_avg || '0',
+        td_acc: data?.td_acc || '0%',
+        td_def: data?.td_def || '0%',
+        sub_avg: data?.sub_avg || '0',
+        ranking: data?.ranking || 0,
+      };
+      
+      // Make sure all fields have values
+      if (typeof sanitizedData.name !== 'string') sanitizedData.name = fighterName || '';
+      if (typeof sanitizedData.image_url !== 'string') sanitizedData.image_url = '';
+      if (typeof sanitizedData.record !== 'string') sanitizedData.record = '';
+      if (typeof sanitizedData.height !== 'string') sanitizedData.height = '';
+      if (typeof sanitizedData.weight !== 'string') sanitizedData.weight = '';
+      if (typeof sanitizedData.reach !== 'string') sanitizedData.reach = '';
+      if (typeof sanitizedData.stance !== 'string') sanitizedData.stance = '';
+      if (typeof sanitizedData.slpm !== 'string') sanitizedData.slpm = '0';
+      if (typeof sanitizedData.str_acc !== 'string') sanitizedData.str_acc = '0%';
+      if (typeof sanitizedData.sapm !== 'string') sanitizedData.sapm = '0';
+      if (typeof sanitizedData.str_def !== 'string') sanitizedData.str_def = '0%';
+      if (typeof sanitizedData.td_avg !== 'string') sanitizedData.td_avg = '0';
+      if (typeof sanitizedData.td_acc !== 'string') sanitizedData.td_acc = '0%';
+      if (typeof sanitizedData.td_def !== 'string') sanitizedData.td_def = '0%';
+      if (typeof sanitizedData.sub_avg !== 'string') sanitizedData.sub_avg = '0';
+      
+      return sanitizedData;
     } catch (error) {
       console.error('Error fetching fighter data:', error);
       toast({
@@ -91,6 +140,15 @@ export default function FightPredictionsPage() {
   };
 
   const handleFighter1Select = async (name: string) => {
+    if (!name || name === 'undefined') {
+      toast({
+        title: 'Error',
+        description: 'Invalid fighter name selected',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
     setIsPredicting(true);
     const data = await fetchFighterData(name);
     setFighter1(data);
@@ -98,6 +156,15 @@ export default function FightPredictionsPage() {
   };
 
   const handleFighter2Select = async (name: string) => {
+    if (!name || name === 'undefined') {
+      toast({
+        title: 'Error',
+        description: 'Invalid fighter name selected',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
     setIsPredicting(true);
     const data = await fetchFighterData(name);
     setFighter2(data);
@@ -151,6 +218,16 @@ export default function FightPredictionsPage() {
   }
 
   const getPrediction = async (fighter1Name: string, fighter2Name: string) => {
+    // Check for valid fighter names
+    if (!fighter1Name || !fighter2Name) {
+      toast({
+        title: 'Error',
+        description: 'Please select two fighters to compare',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
     setIsPredicting(true);
     try {
       const response = await fetch(ENDPOINTS.PREDICTION(fighter1Name, fighter2Name));
@@ -161,8 +238,40 @@ export default function FightPredictionsPage() {
 
       const data = await response.json();
       
+      // Validate the prediction data and provide default values
+      const validatedPrediction: Prediction = {
+        winner: data?.winner || data?.predicted_winner || "Unknown",
+        loser: data?.loser || "Unknown",
+        winner_probability: data?.winner_probability || data?.confidence || 0,
+        loser_probability: data?.loser_probability || 0,
+        prediction_confidence: data?.prediction_confidence || data?.confidence || 0,
+        model_version: data?.model_version || data?.model?.version || "Unknown",
+        model_accuracy: data?.model_accuracy || data?.model?.accuracy || "Unknown",
+        head_to_head: {
+          fighter1_wins: data?.head_to_head?.fighter1_wins || 0,
+          fighter2_wins: data?.head_to_head?.fighter2_wins || 0,
+          last_winner: data?.head_to_head?.last_winner || "N/A",
+          last_method: data?.head_to_head?.last_method || "N/A",
+        },
+        fighter1: {
+          name: data?.fighter1?.name || fighter1Name,
+          record: data?.fighter1?.record || "0-0-0",
+          image_url: data?.fighter1?.image_url || "",
+          probability: data?.fighter1?.probability || 0,
+          win_probability: data?.fighter1?.win_probability || "0%",
+        },
+        fighter2: {
+          name: data?.fighter2?.name || fighter2Name,
+          record: data?.fighter2?.record || "0-0-0",
+          image_url: data?.fighter2?.image_url || "",
+          probability: data?.fighter2?.probability || 0,
+          win_probability: data?.fighter2?.win_probability || "0%",
+        },
+        analysis: data?.analysis || "",
+      };
+      
       // Just use the response as-is - the backend now provides properly formatted win probabilities
-      setPrediction(data);
+      setPrediction(validatedPrediction);
       setShowPredictionModal(true);
     } catch (error) {
       console.error('Error getting prediction:', error);
