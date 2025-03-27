@@ -105,6 +105,22 @@ export function FighterSearch({ onSelectFighter, clearSearch }: FighterSearchPro
 
     try {
       const [baseName, ...rest] = fighter.split('(');
+      return fighter; // Return the full fighter string, let the display handle the formatting
+    } catch (err) {
+      // If any error occurs, return the fighter name as-is
+      console.error('Error formatting fighter name:', err);
+      return fighter;
+    }
+  }
+  
+  const getFighterDisplayElement = (fighter: string) => {
+    // Add safety check for fighter being undefined or null
+    if (!fighter) return <span>No name</span>;
+    
+    if (!fighter.includes('(')) return <span>{fighter}</span>;
+
+    try {
+      const [baseName, ...rest] = fighter.split('(');
       const info = '(' + rest.join('(');
       return (
         <div className="flex flex-col">
@@ -114,8 +130,8 @@ export function FighterSearch({ onSelectFighter, clearSearch }: FighterSearchPro
       );
     } catch (err) {
       // If any error occurs, return the fighter name as-is
-      console.error('Error formatting fighter name:', err);
-      return fighter;
+      console.error('Error creating fighter display element:', err);
+      return <span>{fighter}</span>;
     }
   }
 
@@ -165,7 +181,7 @@ export function FighterSearch({ onSelectFighter, clearSearch }: FighterSearchPro
                         searchTerm === fighter ? "opacity-100" : "opacity-0"
                       )}
                     />
-                    {formatFighterDisplay(fighter)}
+                    {getFighterDisplayElement(fighter)}
                   </CommandItem>
                 ))}
               </CommandGroup>

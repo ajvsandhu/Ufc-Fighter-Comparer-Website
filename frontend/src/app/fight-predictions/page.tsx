@@ -149,8 +149,16 @@ export default function FightPredictionsPage() {
       return;
     }
     
+    // Clean the fighter name - remove record in parentheses if present
+    let cleanName = name;
+    if (name.includes('(')) {
+      cleanName = name.split('(')[0].trim();
+    }
+    
+    console.log('Fighter 1 selected:', cleanName);
+    
     setIsPredicting(true);
-    const data = await fetchFighterData(name);
+    const data = await fetchFighterData(cleanName);
     setFighter1(data);
     setIsPredicting(false);
   };
@@ -165,8 +173,16 @@ export default function FightPredictionsPage() {
       return;
     }
     
+    // Clean the fighter name - remove record in parentheses if present
+    let cleanName = name;
+    if (name.includes('(')) {
+      cleanName = name.split('(')[0].trim();
+    }
+    
+    console.log('Fighter 2 selected:', cleanName);
+    
     setIsPredicting(true);
-    const data = await fetchFighterData(name);
+    const data = await fetchFighterData(cleanName);
     setFighter2(data);
     setIsPredicting(false);
   };
@@ -235,15 +251,30 @@ export default function FightPredictionsPage() {
       return;
     }
     
+    // Clean names one more time to be extra safe
+    let cleanFighter1 = fighter1Name;
+    let cleanFighter2 = fighter2Name;
+    
+    if (cleanFighter1.includes('(')) {
+      cleanFighter1 = cleanFighter1.split('(')[0].trim();
+    }
+    
+    if (cleanFighter2.includes('(')) {
+      cleanFighter2 = cleanFighter2.split('(')[0].trim();
+    }
+    
     setIsPredicting(true);
     try {
-      const response = await fetch(ENDPOINTS.PREDICTION(fighter1Name, fighter2Name));
+      console.log(`Making API call with: "${cleanFighter1}" vs "${cleanFighter2}"`);
+      
+      const response = await fetch(ENDPOINTS.PREDICTION(cleanFighter1, cleanFighter2));
 
       if (!response.ok) {
         throw new Error('Failed to get prediction');
       }
 
       const data = await response.json();
+      console.log("Prediction API response:", data);
       
       // Validate the prediction data and provide default values
       const validatedPrediction: Prediction = {
@@ -261,14 +292,14 @@ export default function FightPredictionsPage() {
           last_method: data?.head_to_head?.last_method || "N/A",
         },
         fighter1: {
-          name: data?.fighter1?.name || fighter1Name,
+          name: data?.fighter1?.name || cleanFighter1,
           record: data?.fighter1?.record || "0-0-0",
           image_url: data?.fighter1?.image_url || "",
           probability: data?.fighter1?.probability || 0,
           win_probability: data?.fighter1?.win_probability || "0%",
         },
         fighter2: {
-          name: data?.fighter2?.name || fighter2Name,
+          name: data?.fighter2?.name || cleanFighter2,
           record: data?.fighter2?.record || "0-0-0",
           image_url: data?.fighter2?.image_url || "",
           probability: data?.fighter2?.probability || 0,
@@ -290,6 +321,19 @@ export default function FightPredictionsPage() {
     } finally {
       setIsPredicting(false);
     }
+  };
+
+  // Utility function to safely display a fighter name
+  const safeDisplayName = (name: any): string => {
+    if (!name) return 'Unknown Fighter';
+    if (typeof name !== 'string') {
+      try {
+        return String(name);
+      } catch (e) {
+        return 'Unknown Fighter';
+      }
+    }
+    return name;
   };
 
   const PredictionModal = () => (
@@ -337,8 +381,8 @@ export default function FightPredictionsPage() {
                 {/* Fighter Names and Win Probabilities */}
                 <div className="grid grid-cols-[1fr,auto,1fr] gap-8 items-center">
                   <div className="text-center space-y-2">
-                    <h4 className="text-xl font-bold">{prediction?.fighter1?.name || 'Fighter 1'}</h4>
-                    <div className={`text-lg font-medium ${prediction?.fighter1?.name === prediction?.winner ? 'text-green-500' : 'text-red-500'}`}>
+                    <h4 className="text-xl font-bold">{safeDisplayName(prediction?.fighter1?.name) || 'Fighter 1'}</h4>
+                    <div className={`text-lg font-medium ${safeDisplayName(prediction?.fighter1?.name) === safeDisplayName(prediction?.winner) ? 'text-green-500' : 'text-red-500'}`}>
                       {prediction?.fighter1?.win_probability || '0%'}
                     </div>
                     <p className="text-sm text-muted-foreground">{prediction?.fighter1?.record || '0-0-0'}</p>
@@ -347,8 +391,8 @@ export default function FightPredictionsPage() {
                     <div className="text-3xl font-bold text-primary">VS</div>
                   </div>
                   <div className="text-center space-y-2">
-                    <h4 className="text-xl font-bold">{prediction?.fighter2?.name || 'Fighter 2'}</h4>
-                    <div className={`text-lg font-medium ${prediction?.fighter2?.name === prediction?.winner ? 'text-green-500' : 'text-red-500'}`}>
+                    <h4 className="text-xl font-bold">{safeDisplayName(prediction?.fighter2?.name) || 'Fighter 2'}</h4>
+                    <div className={`text-lg font-medium ${safeDisplayName(prediction?.fighter2?.name) === safeDisplayName(prediction?.winner) ? 'text-green-500' : 'text-red-500'}`}>
                       {prediction?.fighter2?.win_probability || '0%'}
                     </div>
                     <p className="text-sm text-muted-foreground">{prediction?.fighter2?.record || '0-0-0'}</p>
@@ -359,7 +403,7 @@ export default function FightPredictionsPage() {
                 <div className="relative">
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-accent/30 to-transparent" />
                   <div className="relative text-center py-4">
-                    <h4 className="text-xl font-bold">{prediction?.winner || 'Undecided'}</h4>
+                    <h4 className="text-xl font-bold">{safeDisplayName(prediction?.winner) || 'Undecided'}</h4>
                     <p className="text-primary">Predicted Winner</p>
                   </div>
                 </div>
@@ -383,7 +427,7 @@ export default function FightPredictionsPage() {
                     </div>
                     {prediction?.head_to_head?.last_winner && (
                       <div className="text-sm text-muted-foreground text-center mt-4 pt-4 border-t border-border/50">
-                        Last fight: <span className="font-medium text-foreground">{prediction?.head_to_head?.last_winner}</span> won by <span className="font-medium text-foreground">{prediction?.head_to_head?.last_method || 'Decision'}</span>
+                        Last fight: <span className="font-medium text-foreground">{safeDisplayName(prediction?.head_to_head?.last_winner)}</span> won by <span className="font-medium text-foreground">{prediction?.head_to_head?.last_method || 'Decision'}</span>
                       </div>
                     )}
                   </div>
@@ -424,7 +468,22 @@ export default function FightPredictionsPage() {
     }
     
     // Safe non-null assertion since we just checked
-    getPrediction(fighter1!.name, fighter2!.name);
+    let fighter1Name = fighter1!.name;
+    let fighter2Name = fighter2!.name;
+    
+    // Clean names if they have parentheses
+    if (fighter1Name.includes('(')) {
+      fighter1Name = fighter1Name.split('(')[0].trim();
+    }
+    
+    if (fighter2Name.includes('(')) {
+      fighter2Name = fighter2Name.split('(')[0].trim();
+    }
+    
+    console.log(`Predicting fight between cleaned names: "${fighter1Name}" vs "${fighter2Name}"`);
+    
+    // Call prediction with cleaned names
+    getPrediction(fighter1Name, fighter2Name);
   };
 
   return (
