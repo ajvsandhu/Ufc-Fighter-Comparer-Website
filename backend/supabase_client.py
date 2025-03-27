@@ -123,7 +123,18 @@ class TableQuery:
             response = requests.get(url, headers=self.client.headers)
             response.raise_for_status()
             data = response.json()
-            count = int(response.headers.get('content-range', '0-0/0').split('/')[1])
+            
+            # Handle count parsing safely
+            try:
+                content_range = response.headers.get('content-range', '0-0/0')
+                if '/' in content_range:
+                    count_str = content_range.split('/')[1]
+                    count = int(count_str) if count_str.isdigit() else 0
+                else:
+                    count = 0
+            except (ValueError, IndexError):
+                count = 0
+                
             return QueryResponse(data, count)
         except Exception as e:
             logger.error(f"Error executing query: {e}")

@@ -118,7 +118,13 @@ class FighterPredictor:
             return False
             
         try:
-            model_data = joblib.load(MODEL_PATH)
+            # Try to safely load the model while handling version incompatibilities
+            try:
+                model_data = joblib.load(MODEL_PATH)
+            except Exception as e:
+                self.logger.warning(f"Could not load model directly: {str(e)}")
+                self.logger.info("Forcing model retraining with current scikit-learn version")
+                return False  # Return false to trigger retraining
             
             if isinstance(model_data, dict):
                 self.model = model_data.get('model')
@@ -167,6 +173,17 @@ class FighterPredictor:
             
             if self.model is None:
                 self.logger.error("Model loading failed")
+                return False
+            
+            # Check if model is compatible with current scikit-learn version
+            try:
+                # Try to make a small prediction to check compatibility
+                dummy_data = np.array([[0] * len(self.feature_names)])
+                scaled_data = self.scaler.transform(dummy_data)
+                _ = self.model.predict_proba(scaled_data)
+                self.logger.info("Model compatibility check passed")
+            except Exception as e:
+                self.logger.error(f"Model compatibility check failed: {str(e)}")
                 return False
             
             if self.scaler is None:
@@ -555,190 +572,123 @@ class FighterPredictor:
     
     def _get_training_data(self):
         """
-        Retrieve training data from the database.
+        Collect all the training data we need to teach our model! 📚
+        
+        This gathers historical fight results and fighter stats,
+        then transforms them into the format our model needs to learn.
         
         Returns:
-            tuple: (X, y) where X is the feature matrix and y is the target vector
+            tuple: (X, y) - Features and labels for training
         """
         try:
+            # Get database connection
             supabase = self._get_db_connection()
             if not supabase:
-                self.logger.error("Failed to establish database connection for training data retrieval")
+                self.logger.error("No database connection available")
                 return None, None
                 
-            # Fetch all fighters from the database
-            fighters_response = supabase.table('fighters').select('*').execute()
-            
-            if not fighters_response.data:
-                self.logger.warning("No fighters found in the database")
+            # Get all fighters from the database
+            try:
+                # Use a simpler query to avoid errors
+                response = supabase.table("fighters").select("fighter_name").execute()
+                if not response.data or len(response.data) == 0:
+                    self.logger.warning("No fighters found in the database")
+                    return None, None
+                    
+                fighters = response.data
+            except Exception as e:
+                self.logger.error(f"Error fetching fighters: {str(e)}")
                 return None, None
                 
-            # Create a mapping of fighter names to their data
-            fighter_map = {}
-            
-            for fighter_dict in fighters_response.data:
-                fighter_name = fighter_dict.get('fighter_name')
-                if fighter_name:
-                    fighter_map[fighter_name] = fighter_dict
-            
-            self.logger.info(f"Loaded {len(fighter_map)} fighters for training")
-            
-            # Fetch fight data - use pagination to handle large datasets
-            max_page_size = 1000
-            all_fights = []
-            page = 0
-            
-            while True:
-                try:
-                    # Get page of fights with pagination
-                    fights_response = supabase.table('fighter_last_5_fights').select('*')\
-                        .not_('result', 'is', 'null')\
-                        .not_('result', 'eq', '')\
-                        .not_('opponent', 'is', 'null')\
-                        .not_('opponent', 'eq', '')\
-                        .order('id')\
-                        .range(page * max_page_size, (page + 1) * max_page_size - 1)\
-                        .execute()
-                    
-                    page_fights = fights_response.data
-                    if not page_fights or len(page_fights) == 0:
-                        break
-                    
-                    all_fights.extend(page_fights)
-                    self.logger.info(f"Loaded {len(page_fights)} fights from page {page+1}")
-                    
-                    # If we got less than max_page_size, we're done
-                    if len(page_fights) < max_page_size:
-                        break
-                    
-                    page += 1
-                except Exception as e:
-                    self.logger.error(f"Error fetching page {page} of fights: {str(e)}")
-                    break
-            
-            if not all_fights:
-                self.logger.warning("No valid fights found in the database for training")
-                return None, None
-                
-            self.logger.info(f"Found {len(all_fights)} total fight records")
-            
-            # All fight dictionaries are already in the right format from Supabase
-            all_fight_dicts = all_fights
-            
-            # Build a lookup of fights by fighter-opponent pairs
-            fight_lookup = {}
-            for fight in all_fight_dicts:
-                fighter = fight.get('fighter_name')
-                opponent = fight.get('opponent')
-                if fighter and opponent:
-                    key = (fighter, opponent)
-                    fight_lookup[key] = fight
-            
-            # Find matching fight pairs between fighter and opponent
-            processed_fights = []
-            processed_pairs = set()
-            
-            for fight in all_fight_dicts:
-                fighter1 = fight.get('fighter_name')
-                fighter2 = fight.get('opponent')
-                
-                if not fighter1 or not fighter2:
-                        continue
-                        
-                # Skip if we've already processed this pair
-                if (fighter1, fighter2) in processed_pairs or (fighter2, fighter1) in processed_pairs:
-                        continue
-                        
-                # Look for the reverse fight (opponent's perspective)
-                reverse_key = (fighter2, fighter1)
-                if reverse_key in fight_lookup:
-                    fighter1_fight = fight
-                    fighter2_fight = fight_lookup[reverse_key]
-                    
-                    # Add as a matched pair
-                    processed_fights.append((fighter1_fight, fighter2_fight))
-                    processed_pairs.add((fighter1, fighter2))
-                    processed_pairs.add((fighter2, fighter1))
-            
-            self.logger.info(f"Successfully matched {len(processed_fights)} fight pairs")
-            
-            if not processed_fights:
-                self.logger.error("Could not find any valid fight pairs for training")
-                return None, None
-                
-            # Process fights to extract features and labels
+            # Process fighters to extract training data
             X = []
             y = []
             processed_count = 0
             skipped_count = 0
             
-            # Use batching to prevent memory issues
-            batch_size = 500
-            for batch_index in range(0, len(processed_fights), batch_size):
-                batch_end = min(batch_index + batch_size, len(processed_fights))
-                batch = processed_fights[batch_index:batch_end]
+            # Process fighters in batches
+            batch_size = 50
+            total_fighters = len(fighters)
+            self.logger.info(f"Processing {total_fighters} fighters")
+            
+            for batch_index in range(0, total_fighters, batch_size):
+                batch_end = min(batch_index + batch_size, total_fighters)
+                self.logger.info(f"Processing fighter batch {batch_index // batch_size + 1}/{(total_fighters + batch_size - 1) // batch_size}")
                 
-                self.logger.info(f"Processing batch {batch_index//batch_size + 1} ({batch_index} to {batch_end})")
-                
-                for i, (fight1_dict, fight2_dict) in enumerate(batch):
+                # Process each fighter in batch
+                for i in range(batch_index, batch_end):
                     try:
-                        # Get fighter names
-                        fighter1_name = fight1_dict.get('fighter_name')
-                        fighter2_name = fight1_dict.get('opponent')
+                        fighter = fighters[i]
+                        fighter_name = fighter.get('fighter_name')
                         
-                        if not fighter1_name or not fighter2_name:
-                            self.logger.warning(f"Missing fighter names in fight {batch_index + i}")
+                        if not fighter_name:
                             skipped_count += 1
                             continue
-                                        
-                        # Get fight result
-                        result = fight1_dict.get('result', '').strip().upper()
-                        
-                        if not result:
-                            self.logger.warning(f"Missing result in fight between {fighter1_name} and {fighter2_name}")
+                            
+                        # Get fighter's last 5 fights
+                        fights = self._get_fighter_fights(fighter_name)
+                        if not fights or len(fights) < 2:  # Need at least 2 fights for meaningful data
                             skipped_count += 1
                             continue
                         
-                        # Extract features for both fighters
-                        fighter1_features = self._extract_features_from_fighter(fighter1_name)
-                        fighter2_features = self._extract_features_from_fighter(fighter2_name)
-                        
-                        if not fighter1_features or not fighter2_features:
-                            self.logger.warning(f"Could not extract features for {fighter1_name} or {fighter2_name}")
-                            skipped_count += 1
-                            continue
-                        
-                        # Ensure both feature sets have the same keys
-                        all_keys = set(fighter1_features.keys()).union(set(fighter2_features.keys()))
-                        for key in all_keys:
-                            if key not in fighter1_features:
-                                fighter1_features[key] = 0
-                            if key not in fighter2_features:
-                                fighter2_features[key] = 0
-                        
-                        # Create feature vector (difference between fighters)
-                        feature_keys = sorted(all_keys)
-                        feature_vector = []
-                        
-                        for key in feature_keys:
-                            feature_vector.append(fighter1_features[key] - fighter2_features[key])
-                        
-                        # Determine label: 1 if fighter1 won, 0 if fighter2 won
-                        if 'W' in result:
-                            label = 1  # fighter1 won
-                        elif 'L' in result:
-                            label = 0  # fighter1 lost (fighter2 won)
-                        else:
-                            # Skip draws or unknown results
-                            skipped_count += 1
-                            continue
-                        
-                        X.append(feature_vector)
-                        y.append(label)
-                        processed_count += 1
-                        
+                        # Process each fight to extract features and labels
+                        for fight in fights:
+                            result = fight.get('result', '').upper()
+                            if not result or 'W' not in result and 'L' not in result:
+                                # Skip fights with no clear result
+                                continue
+                                
+                            opponent_name = fight.get('opponent', '')
+                            if not opponent_name:
+                                continue
+                            
+                            fighter1_name = fighter_name  # Current fighter
+                            fighter2_name = opponent_name  # Opponent
+                            
+                            # Skip if fighter names are the same (data error)
+                            if fighter1_name.lower() == fighter2_name.lower():
+                                continue
+                            
+                            # Extract features for both fighters
+                            fighter1_features = self._extract_features_from_fighter(fighter1_name)
+                            fighter2_features = self._extract_features_from_fighter(fighter2_name)
+                            
+                            if not fighter1_features or not fighter2_features:
+                                self.logger.warning(f"Could not extract features for {fighter1_name} or {fighter2_name}")
+                                skipped_count += 1
+                                continue
+                            
+                            # Ensure both feature sets have the same keys
+                            all_keys = set(fighter1_features.keys()).union(set(fighter2_features.keys()))
+                            for key in all_keys:
+                                if key not in fighter1_features:
+                                    fighter1_features[key] = 0
+                                if key not in fighter2_features:
+                                    fighter2_features[key] = 0
+                            
+                            # Create feature vector (difference between fighters)
+                            feature_keys = sorted(all_keys)
+                            feature_vector = []
+                            
+                            for key in feature_keys:
+                                feature_vector.append(fighter1_features[key] - fighter2_features[key])
+                            
+                            # Determine label: 1 if fighter1 won, 0 if fighter2 won
+                            if 'W' in result:
+                                label = 1  # fighter1 won
+                            elif 'L' in result:
+                                label = 0  # fighter1 lost (fighter2 won)
+                            else:
+                                # Skip draws or unknown results
+                                skipped_count += 1
+                                continue
+                            
+                            X.append(feature_vector)
+                            y.append(label)
+                            processed_count += 1
+                            
                     except Exception as e:
-                        self.logger.error(f"Error processing fight {batch_index + i}: {str(e)}")
+                        self.logger.error(f"Error processing fighter {i}: {str(e)}")
                         import traceback
                         self.logger.error(traceback.format_exc())
                         skipped_count += 1
@@ -751,6 +701,11 @@ class FighterPredictor:
             
             # Convert to numpy arrays
             try:
+                # Make sure all feature vectors have the same length
+                if X:
+                    max_length = max(len(x) for x in X)
+                    X = [x + [0] * (max_length - len(x)) for x in X]  # Pad with zeros if needed
+                
                 X = np.array(X)
                 y = np.array(y)
                 
