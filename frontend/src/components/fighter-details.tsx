@@ -21,6 +21,7 @@ import {
 } from "recharts"
 import { ErrorBoundary } from "react-error-boundary"
 import { ChevronDown, ChevronUp } from "lucide-react"
+import { FighterStats, FightHistory } from "@/types/fighter"
 
 // Constants
 const DEFAULT_PLACEHOLDER_IMAGE = '/placeholder-fighter.png'
@@ -33,52 +34,6 @@ type FightResult = 'win' | 'loss' | 'draw' | 'nc'
 
 interface FighterDetailsProps {
   fighterName: string
-}
-
-interface FighterStats {
-  name: string;
-  image_url?: string;
-  record: string;
-  height: string;
-  weight: string;
-  reach: string;
-  stance: string;
-  dob: string;
-  slpm: string;
-  str_acc: string;
-  sapm: string;
-  str_def: string;
-  td_avg: string;
-  td_acc: string;
-  td_def: string;
-  sub_avg: string;
-  weight_class?: string;
-  nickname?: string;
-  last_5_fights?: FightHistory[];
-  ranking?: string | number;
-  tap_link?: string;
-}
-
-interface FightHistory {
-  opponent_name: string;
-  opponent_display_name?: string;
-  result: string;
-  method: string;
-  round: number;
-  time: string;
-  event: string;
-  date: string;
-  opponent_stats?: FighterStats;
-  kd: string;
-  sig_str: string;
-  sig_str_pct: string;
-  total_str: string;
-  head_str: string;
-  body_str: string;
-  leg_str: string;
-  takedowns: string;
-  td_pct: string;
-  ctrl: string;
 }
 
 interface ChartData {
@@ -208,7 +163,16 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
         const processedFightHistory = Array.isArray(data.last_5_fights) 
           ? data.last_5_fights.map((fight: any) => {
               console.log("Processing fight:", fight);
+              // Use direct database fields primarily, with fallbacks for compatibility
               return {
+                id: fight?.id,
+                fighter_name: String(fight?.fighter_name || ''),
+                fight_url: String(fight?.fight_url || ''),
+                opponent: String(fight?.opponent || ''),
+                // Use fight_date if available, otherwise use date
+                date: String(fight?.date || fight?.fight_date || 'Unknown Date'),
+                fight_date: String(fight?.fight_date || fight?.date || 'Unknown Date'),
+                // Ensure all fields that might be used have fallbacks
                 opponent_name: String(fight?.opponent_name || fight?.opponent || 'Unknown Opponent'),
                 opponent_display_name: String(fight?.opponent_display_name || fight?.opponent || 'Unknown Opponent'),
                 result: String(fight?.result || 'NC'),
@@ -216,8 +180,6 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                 round: Number(fight?.round || 0),
                 time: String(fight?.time || '0:00'),
                 event: String(fight?.event || 'Unknown Event'),
-                date: String(fight?.date || 'Unknown Date'),
-                opponent_stats: fight?.opponent_stats,
                 kd: String(fight?.kd || '0'),
                 sig_str: String(fight?.sig_str || '0/0'),
                 sig_str_pct: String(fight?.sig_str_pct || '0%'),
@@ -347,31 +309,36 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
         return '';
       }
       
-      const birthDate = new Date(dob);
+    const birthDate = new Date(dob);
       // Check if the date is valid
       if (isNaN(birthDate.getTime())) {
         return '';
       }
       
-      const today = new Date();
-      let age = today.getFullYear() - birthDate.getFullYear();
-      const monthDiff = today.getMonth() - birthDate.getMonth();
-      
-      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-        age--;
-      }
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
       
       // Ensure age is reasonable (between 18 and 50 for fighters)
       if (age < 18 || age > 50) {
         console.warn(`Calculated age ${age} from DOB ${dob} seems suspicious`);
         return '';
       }
-      
-      return age;
+    
+    return age;
     } catch (error) {
       console.error(`Error calculating age from DOB: ${dob}`, error);
       return '';
     }
+  };
+
+  // Create a utility function to safely get stats and apply fallbacks
+  const getStat = (value: string | undefined, fallback: string = DEFAULT_VALUE): string => {
+    return value || fallback;
   };
 
   if (isLoading) {
@@ -410,8 +377,13 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
             // Ensure fight object is valid
             if (!fight) return null;
             
+            // Use database field names with fallbacks for display
+            const displayName = fight.opponent_display_name || fight.opponent || fight.opponent_name || 'Unknown Opponent';
+            const fightDate = fight.fight_date || fight.date || 'Unknown Date';
+            const fightResult = fight.result || 'NC';
+            
             return (
-              <Card key={`${fight.opponent_name || 'opponent'}-${fight.date || index}`} className="overflow-hidden">
+              <Card key={`${displayName}-${fightDate}-${index}`} className="overflow-hidden">
                 <CardContent className="p-0">
                   <div 
                     className={`p-4 cursor-pointer hover:bg-accent/10 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 ${
@@ -421,13 +393,13 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                   >
                     <div className="flex items-center gap-3">
                       <div className={`w-4 h-4 rounded-full ${
-                        fight.result?.toLowerCase() === 'win' ? 'bg-green-500' : 
-                        fight.result?.toLowerCase() === 'loss' ? 'bg-red-500' : 
+                        fightResult.toLowerCase() === 'win' ? 'bg-green-500' : 
+                        fightResult.toLowerCase() === 'loss' ? 'bg-red-500' : 
                         'bg-yellow-500'
                       }`} />
                       <div>
-                        <p className="font-medium">{fight.opponent_display_name || fight.opponent_name || fight.opponent || 'Opponent'}</p>
-                        <p className="text-sm text-muted-foreground">{fight.date || 'Unknown Date'}</p>
+                        <p className="font-medium">{displayName}</p>
+                        <p className="text-sm text-muted-foreground">{fightDate}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-6">
@@ -529,6 +501,115 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
     </div>
   );
 
+  // Overview tab content
+  const OverviewView = () => {
+    // Use getStat function to safely access properties
+    const offense = [
+      { label: "Strikes Landed per Min", value: getStat(stats?.slpm) },
+      { label: "Striking Accuracy", value: getStat(stats?.str_acc, DEFAULT_PERCENTAGE) },
+      { label: "Strikes Absorbed per Min", value: getStat(stats?.sapm) },
+      { label: "Striking Defense", value: getStat(stats?.str_def, DEFAULT_PERCENTAGE) }
+    ];
+    
+    const grappling = [
+      { label: "Takedown Avg per 15 Min", value: getStat(stats?.td_avg) },
+      { label: "Takedown Accuracy", value: getStat(stats?.td_acc, DEFAULT_PERCENTAGE) },
+      { label: "Takedown Defense", value: getStat(stats?.td_def, DEFAULT_PERCENTAGE) },
+      { label: "Submission Avg per 15 Min", value: getStat(stats?.sub_avg) }
+    ];
+    
+    return (
+      <div className="grid gap-6">
+        {/* Fighter Overview Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Fighter Overview</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Radar Chart */}
+              <div className="h-[400px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart data={chartData.overallStats}>
+                    <PolarGrid strokeDasharray="3 3" />
+                    <PolarAngleAxis 
+                      dataKey="subject" 
+                      tick={{ fill: 'currentColor', fontSize: 12 }}
+                    />
+                    <PolarRadiusAxis angle={30} domain={[0, 100]} />
+                    <Radar
+                      name={stats.name}
+                      dataKey="A"
+                      stroke="#3b82f6"
+                      fill="#3b82f6"
+                      fillOpacity={0.6}
+                    />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Quick Stats */}
+              <div className="space-y-6">
+                <h3 className="text-lg font-semibold">Quick Stats</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {fightStats.map((category) => (
+                    <div key={category.category} className="space-y-3">
+                      <h4 className="text-sm font-medium text-muted-foreground">{category.category}</h4>
+                      {category.stats.map((stat) => (
+                        <div key={stat.label} className="flex justify-between items-center">
+                          <span className="text-sm">{stat.label}</span>
+                          <span className="font-semibold">{stat.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Strike Distribution Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Strike Distribution</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[200px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData.strikeDistribution} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" domain={[0, 'dataMax + 1']} />
+                  <YAxis dataKey="name" type="category" />
+                  <Tooltip
+                    content={({ payload, label }) => {
+                      if (payload && payload.length && payload[0].value != null) {
+                        const value = Number(payload[0].value);
+                        const percentage = payload[0].payload.percentage;
+                        return (
+                          <div className="bg-background/95 p-2 rounded-lg border shadow-sm">
+                            <p className="font-medium">{label}</p>
+                            <p className="text-sm">{`${value.toFixed(1)} strikes/min (${percentage.toFixed(1)}%)`}</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Bar dataKey="value" fill="#3b82f6">
+                    {chartData.strikeDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={index === 0 ? '#3b82f6' : '#3b82f6'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl animate-in fade-in duration-700">
       <div className="space-y-8 flex flex-col items-center">
@@ -614,94 +695,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
             </TabsList>
 
             <TabsContent value="overview" className="animate-in slide-in-from-bottom duration-500">
-              <div className="grid gap-6">
-                {/* Fighter Overview Card */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Fighter Overview</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      {/* Radar Chart */}
-                      <div className="h-[400px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <RadarChart data={chartData.overallStats}>
-                            <PolarGrid strokeDasharray="3 3" />
-                            <PolarAngleAxis 
-                              dataKey="subject" 
-                              tick={{ fill: 'currentColor', fontSize: 12 }}
-                            />
-                            <PolarRadiusAxis angle={30} domain={[0, 100]} />
-                            <Radar
-                              name={stats.name}
-                              dataKey="A"
-                              stroke="#3b82f6"
-                              fill="#3b82f6"
-                              fillOpacity={0.6}
-                            />
-                          </RadarChart>
-                        </ResponsiveContainer>
-                      </div>
-
-                      {/* Quick Stats */}
-                      <div className="space-y-6">
-                        <h3 className="text-lg font-semibold">Quick Stats</h3>
-                        <div className="grid grid-cols-2 gap-4">
-                          {fightStats.map((category) => (
-                            <div key={category.category} className="space-y-3">
-                              <h4 className="text-sm font-medium text-muted-foreground">{category.category}</h4>
-                              {category.stats.map((stat) => (
-                                <div key={stat.label} className="flex justify-between items-center">
-                                  <span className="text-sm">{stat.label}</span>
-                                  <span className="font-semibold">{stat.value}</span>
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Strike Distribution Card */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Strike Distribution</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="h-[200px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={chartData.strikeDistribution} layout="vertical">
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis type="number" domain={[0, 'dataMax + 1']} />
-                          <YAxis dataKey="name" type="category" />
-                          <Tooltip
-                            content={({ payload, label }) => {
-                              if (payload && payload.length && payload[0].value != null) {
-                                const value = Number(payload[0].value);
-                                const percentage = payload[0].payload.percentage;
-                                return (
-                                  <div className="bg-background/95 p-2 rounded-lg border shadow-sm">
-                                    <p className="font-medium">{label}</p>
-                                    <p className="text-sm">{`${value.toFixed(1)} strikes/min (${percentage.toFixed(1)}%)`}</p>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            }}
-                          />
-                          <Bar dataKey="value" fill="#3b82f6">
-                            {chartData.strikeDistribution.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={index === 0 ? '#3b82f6' : '#3b82f6'} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+              <OverviewView />
             </TabsContent>
 
             <TabsContent value="stats" className="space-y-6 animate-in slide-in-from-bottom duration-500">

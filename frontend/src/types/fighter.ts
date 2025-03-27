@@ -24,18 +24,13 @@ export interface FighterStats {
   tap_link?: string;
 }
 
+// The FightHistory interface matches the actual database schema
+// All fields are optional to handle different data formats
 export interface FightHistory {
-  opponent_name: string;
-  opponent?: string;  // Add this field to accommodate alternate data formats
-  opponent_display_name?: string;
-  result: string;
-  method: string;
-  round: number;
-  time: string;
-  event: string;
-  date: string;
-  opponent_stats?: Record<string, any>; // Change to Record to avoid circular dependency
-  // Strike statistics
+  // Database fields (from screenshot)
+  id?: number | string;
+  fighter_name?: string;
+  fight_url?: string;
   kd?: string;
   sig_str?: string;
   sig_str_pct?: string;
@@ -46,4 +41,18 @@ export interface FightHistory {
   takedowns?: string;
   td_pct?: string;
   ctrl?: string;
+  result?: string;
+  method?: string;
+  opponent?: string;
+  fight_date?: string;
+  event?: string;
+  created_at?: string;
+  updated_at?: string;
+  
+  // Legacy fields for backward compatibility
+  date?: string;
+  opponent_name?: string;
+  opponent_display_name?: string;
+  round?: number;
+  time?: string;
 } 

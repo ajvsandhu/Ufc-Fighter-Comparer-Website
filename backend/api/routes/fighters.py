@@ -117,34 +117,34 @@ def get_fighters(query: str = Query("", min_length=0)):
                 # Only process if fighter_name is not empty
                 if fighter_name:
                     ranking = sanitized_fighter.get('ranking')
-                    
-                    # Split fighter name into parts for matching
-                    name_parts = fighter_name.lower().split()
-                    
-                    # Check for matches:
-                    # 1. Full name contains query
-                    # 2. Any part of name starts with any query part
-                    # 3. Any part of name contains any query part
-                    matches = False
-                    
-                    # Full name contains entire query
-                    if query.lower() in fighter_name.lower():
-                        matches = True
-                    else:
-                        # Check if any query part matches start of any name part
-                        for q_part in query_parts:
-                            for name_part in name_parts:
-                                if name_part.startswith(q_part):
-                                    matches = True
-                                    break
-                            if matches:
+                
+                # Split fighter name into parts for matching
+                name_parts = fighter_name.lower().split()
+                
+                # Check for matches:
+                # 1. Full name contains query
+                # 2. Any part of name starts with any query part
+                # 3. Any part of name contains any query part
+                matches = False
+                
+                # Full name contains entire query
+                if query.lower() in fighter_name.lower():
+                    matches = True
+                else:
+                    # Check if any query part matches start of any name part
+                    for q_part in query_parts:
+                        for name_part in name_parts:
+                            if name_part.startswith(q_part):
+                                matches = True
                                 break
-                                
-                    if matches:
-                        # Format name with record and add to results
-                        formatted_name = f"{fighter_name} ({record})"
-                        fighters_list.append(formatted_name)
-        
+                        if matches:
+                            break
+                            
+                if matches:
+                    # Format name with record and add to results
+                    formatted_name = f"{fighter_name} ({record})"
+                    fighters_list.append(formatted_name)
+            
         # Final safety check - ensure all items are strings
         fighters_list = [str(name) for name in fighters_list if name]
         
