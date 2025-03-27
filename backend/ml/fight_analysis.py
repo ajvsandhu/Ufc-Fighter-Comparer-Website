@@ -220,337 +220,185 @@ def calculate_fighter_advantages(
 def generate_matchup_analysis(
     fighter1_data: Dict[str, Any],
     fighter2_data: Dict[str, Any],
-    head_to_head: Optional[Dict[str, Any]] = None,
-    common_opponents: Optional[Dict[str, Any]] = None,
-    prediction_data: Optional[Dict[str, Any]] = None
-) -> str:
+    head_to_head: Dict[str, Any] = None,
+    common_opponents: List[Dict[str, Any]] = None,
+    prediction_data: Dict[str, Any] = None
+) -> Dict[str, Any]:
     """
-    Generate a detailed, data-driven analysis of the matchup.
-    
-    This function creates a comprehensive analysis of the matchup by considering:
-    - Fighter advantages in various categories
-    - Head-to-head history
-    - Common opponents
-    - Recent performance
-    - Physical attributes
-    - Fighting styles
+    Generate a detailed analysis of the matchup between two fighters.
     
     Args:
-        fighter1_data: Dictionary containing first fighter's data
-        fighter2_data: Dictionary containing second fighter's data
-        head_to_head: Optional dictionary containing head-to-head history
-        common_opponents: Optional dictionary containing common opponents analysis
-        prediction_data: Optional dictionary containing prediction results
+        fighter1_data: Data for fighter 1
+        fighter2_data: Data for fighter 2
+        head_to_head: Head-to-head history between fighters
+        common_opponents: List of common opponents
+        prediction_data: Prediction data including probabilities
         
     Returns:
-        str: Detailed analysis of the matchup
+        Dict with matchup analysis
     """
+    fighter1_name = fighter1_data.get('fighter_name', 'Fighter 1')
+    fighter2_name = fighter2_data.get('fighter_name', 'Fighter 2')
+    
+    # Initialize analysis with basic sections
+    analysis = {
+        "striking_comparison": {},
+        "grappling_comparison": {},
+        "physical_comparison": {},
+        "history": {},
+        "prediction_notes": {}
+    }
+    
+    # Striking comparison
     try:
-        # Get fighter names
-        fighter1_name = fighter1_data.get('fighter_name', '') or fighter1_data.get('name', '')
-        fighter2_name = fighter2_data.get('fighter_name', '') or fighter2_data.get('name', '')
+        f1_striking = {}
+        f2_striking = {}
         
-        if not fighter1_name or not fighter2_name:
-            logger.warning("Missing fighter names in analysis generation")
-            return "Analysis unavailable due to missing fighter data."
+        # Get striking stats
+        for fighter, stats in [(fighter1_name, f1_striking), (fighter2_name, f2_striking)]:
+            data = fighter1_data if fighter == fighter1_name else fighter2_data
+            stats["slpm"] = float(data.get("SLPM", 0) or 0)
+            stats["str_acc"] = float(data.get("StrAcc", 0) or 0)
+            stats["str_def"] = float(data.get("StrDef", 0) or 0)
+            stats["spm"] = float(data.get("SApM", 0) or 0)
         
-        # Calculate advantages
-        advantages = calculate_fighter_advantages(fighter1_data, fighter2_data)
-        
-        # Determine winner and loser based on prediction
-        winner_name = prediction_data.get('winner', '')
-        loser_name = prediction_data.get('loser', '')
-        confidence = prediction_data.get('prediction_confidence', 0.5) * 100
-        
-        if not winner_name or not loser_name:
-            logger.warning("Missing winner/loser in prediction data")
-            return "Analysis unavailable due to missing prediction data."
-        
-        is_fighter1_winner = winner_name == fighter1_name
-        winner_data = fighter1_data if is_fighter1_winner else fighter2_data
-        loser_data = fighter2_data if is_fighter1_winner else fighter1_data
-        
-        # Get weight classes
-        winner_weight_class = winner_data.get('weight_class', '').lower() 
-        loser_weight_class = loser_data.get('weight_class', '').lower()
-        
-        # Get rankings
-        winner_rank = winner_data.get('ranking', '')
-        loser_rank = loser_data.get('ranking', '')
-        winner_is_champion = bool(winner_data.get('is_champion', 0))
-        loser_is_champion = bool(loser_data.get('is_champion', 0))
-        
-        # Determine fighter styles more accurately
-        styles_map = {
-            'makhachev': 'grappler',
-            'nurmagomedov': 'grappler',
-            'chimaev': 'grappler',
-            'usman': 'wrestler',
-            'covington': 'wrestler',
-            'adesanya': 'striker',
-            'holloway': 'striker', 
-            'mcgregor': 'striker',
-            'whittaker': 'striker'
-        }
-        
-        # Check for known fighters and their styles
-        winner_style = None
-        loser_style = None
-        
-        for name, style in styles_map.items():
-            if name in winner_name.lower():
-                winner_style = style
-            if name in loser_name.lower():
-                loser_style = style
-        
-        if not winner_style:
-            # Determine based on features
-            if winner_data.get('is_wrestler', 0) and winner_data.get('is_grappler', 0):
-                winner_style = 'grappler'
-            elif winner_data.get('is_wrestler', 0):
-                winner_style = 'wrestler'
-            elif winner_data.get('is_striker', 0):
-                winner_style = 'striker'
-            else:
-                winner_style = 'balanced fighter'
-        
-        if not loser_style:
-            # Determine based on features
-            if loser_data.get('is_wrestler', 0) and loser_data.get('is_grappler', 0):
-                loser_style = 'grappler'
-            elif loser_data.get('is_wrestler', 0):
-                loser_style = 'wrestler'
-            elif loser_data.get('is_striker', 0):
-                loser_style = 'striker'
-            else:
-                loser_style = 'balanced fighter'
-        
-        # Build the analysis
-        analysis = []
-        
-        # Check for significant weight class difference
-        weight_class_advantage = ''
-        
-        if winner_weight_class and loser_weight_class and winner_weight_class != loser_weight_class:
-            weight_classes = ['flyweight', 'bantamweight', 'featherweight', 'lightweight', 
-                             'welterweight', 'middleweight', 'light heavyweight', 'heavyweight']
-            
-            try:
-                winner_idx = weight_classes.index(winner_weight_class)
-                loser_idx = weight_classes.index(loser_weight_class)
-                diff = abs(winner_idx - loser_idx)
-                
-                if diff >= 2:
-                    heavier_fighter = winner_name if winner_idx > loser_idx else loser_name
-                    lighter_fighter = loser_name if winner_idx > loser_idx else winner_name
-                    weight_class_advantage = f"There is a significant weight class difference between these fighters, with {heavier_fighter} being {diff} weight classes heavier than {lighter_fighter}. "
-                    if heavier_fighter == winner_name:
-                        weight_class_advantage += f"This size advantage is a major factor in {winner_name}'s favor. "
-            except ValueError:
-                # One of the weight classes not found in the list
-                pass
-        
-        # Introduction - incorporate rankings if available
-        intro = f"Based on our analysis of statistical metrics, {winner_name} has a {confidence:.0f}% chance of defeating {loser_name}. "
-        
-        if winner_rank and loser_rank:
-            if winner_is_champion:
-                intro = f"Champion {winner_name} has a {confidence:.0f}% chance of defeating #{loser_rank} ranked {loser_name}. "
-            elif loser_is_champion:
-                intro = f"#{winner_rank} ranked {winner_name} has a {confidence:.0f}% chance of upsetting Champion {loser_name}. "
-            else:
-                intro = f"#{winner_rank} ranked {winner_name} has a {confidence:.0f}% chance of defeating #{loser_rank} ranked {loser_name}. "
-        
-        analysis.append(intro)
-        
-        # Add weight class difference if present
-        if weight_class_advantage:
-            analysis.append(weight_class_advantage)
-        
-        # Head-to-head history
-        if head_to_head and (head_to_head.get('fighter1_wins', 0) > 0 or head_to_head.get('fighter2_wins', 0) > 0):
-            f1_wins = head_to_head.get('fighter1_wins', 0)
-            f2_wins = head_to_head.get('fighter2_wins', 0)
-            
-            if f1_wins > 0 and f2_wins > 0:
-                analysis.append(f"These fighters have a history together with {fighter1_name} winning {f1_wins} time(s) and {fighter2_name} winning {f2_wins} time(s).")
-            elif f1_wins > 0:
-                times = "times" if f1_wins > 1 else "time"
-                analysis.append(f"{fighter1_name} has already beaten {fighter2_name} {f1_wins} {times}.")
-            else:
-                times = "times" if f2_wins > 1 else "time"
-                analysis.append(f"{fighter2_name} has already beaten {fighter1_name} {f2_wins} {times}.")
-            
-            last_winner = head_to_head.get('last_winner')
-            last_method = head_to_head.get('last_method')
-            
-            if last_winner and last_method:
-                if winner_name == last_winner:
-                    analysis.append(f"Their most recent matchup ended with {winner_name} winning by {last_method}, which reinforces our prediction.")
-                else:
-                    analysis.append(f"Although {loser_name} won their most recent matchup by {last_method}, our model indicates {winner_name} has improved enough to win this time.")
-        
-        # Common opponents
-        if common_opponents and common_opponents.get('common_opponents_count', 0) > 0:
-            count = common_opponents.get('common_opponents_count', 0)
-            advantage = common_opponents.get('common_opponent_advantage', 0)
-            
-            if count >= 3:
-                analysis.append(f"The fighters have faced {count} common opponents, providing solid comparative data.")
-            else:
-                analysis.append(f"The fighters have faced {count} common opponent(s).")
-                
-            if advantage > 1:
-                analysis.append(f"{fighter1_name} has performed significantly better against these common opponents, which supports their edge in this matchup.")
-            elif advantage < -1:
-                analysis.append(f"{fighter2_name} has performed significantly better against these common opponents, which supports their edge in this matchup.")
-        
-        # Style matchup - improved for better accuracy especially for grapplers
-        style_matchup = f"This matchup pits {winner_name} the {winner_style} against {loser_name} the {loser_style}. "
-        
-        # Add style-specific analysis
-        if winner_style == 'grappler' and loser_style == 'striker':
-            style_matchup += f"{winner_name}'s grappling-heavy approach is likely to neutralize {loser_name}'s striking advantage. "
-            
-            # Check takedown stats
-            if advantages['grappling']['takedowns']['fighter'] == ('fighter1' if is_fighter1_winner else 'fighter2'):
-                style_matchup += f"With superior takedown ability, {winner_name} should be able to control where this fight takes place. "
-        
-        elif winner_style == 'striker' and loser_style == 'grappler':
-            style_matchup += f"While {loser_name} will likely look to take this fight to the ground, "
-            
-            # Check takedown defense
-            if advantages['grappling']['takedown_defense']['fighter'] == ('fighter1' if is_fighter1_winner else 'fighter2'):
-                td_def_val = advantages['grappling']['takedown_defense']['values'][0 if is_fighter1_winner else 1]
-                style_matchup += f"{winner_name}'s strong takedown defense ({td_def_val:.0f}%) should allow them to keep the fight standing where they have the advantage. "
-            else:
-                style_matchup += f"{winner_name} will need to use their striking advantage in the moments when the fight stays standing. "
-        
-        analysis.append(style_matchup)
-            
-        # Key advantages
-        key_advantages = []
-        
-        # Striking advantages
-        if advantages['striking']['volume']['fighter'] == ('fighter1' if is_fighter1_winner else 'fighter2'):
-            if advantages['striking']['volume']['percentage'] > 20:
-                key_advantages.append(f"{winner_name} has significantly higher striking output ({advantages['striking']['volume']['values'][0 if is_fighter1_winner else 1]:.1f} vs. {advantages['striking']['volume']['values'][1 if is_fighter1_winner else 0]:.1f} strikes per minute)")
-        
-        # Striking accuracy
-        if advantages['striking']['accuracy']['fighter'] == ('fighter1' if is_fighter1_winner else 'fighter2'):
-            if advantages['striking']['accuracy']['difference'] > 5:
-                key_advantages.append(f"{winner_name} is more accurate with strikes ({advantages['striking']['accuracy']['values'][0 if is_fighter1_winner else 1]:.0f}% vs. {advantages['striking']['accuracy']['values'][1 if is_fighter1_winner else 0]:.0f}%)")
-        
-        # Grappling advantages
-        if advantages['grappling']['takedowns']['fighter'] == ('fighter1' if is_fighter1_winner else 'fighter2'):
-            if advantages['grappling']['takedowns']['difference'] > 1:
-                key_advantages.append(f"{winner_name} averages more takedowns ({advantages['grappling']['takedowns']['values'][0 if is_fighter1_winner else 1]:.1f} vs. {advantages['grappling']['takedowns']['values'][1 if is_fighter1_winner else 0]:.1f} per 15 minutes)")
-        
-        # Takedown defense
-        if advantages['grappling']['takedown_defense']['fighter'] == ('fighter1' if is_fighter1_winner else 'fighter2'):
-            if advantages['grappling']['takedown_defense']['difference'] > 10:
-                key_advantages.append(f"{winner_name} has superior takedown defense ({advantages['grappling']['takedown_defense']['values'][0 if is_fighter1_winner else 1]:.0f}% vs. {advantages['grappling']['takedown_defense']['values'][1 if is_fighter1_winner else 0]:.0f}%)")
-        
-        # Physical advantages
-        if 'reach' in advantages['physical']:
-            if advantages['physical']['reach']['fighter'] == ('fighter1' if is_fighter1_winner else 'fighter2'):
-                if advantages['physical']['reach']['difference'] > 2:
-                    key_advantages.append(f"{winner_name} has a reach advantage ({winner_data.get('reach', '')} vs. {loser_data.get('reach', '')})")
-        
-        # Defense advantages
-        if advantages['defense']['striking']['fighter'] == ('fighter1' if is_fighter1_winner else 'fighter2'):
-            if advantages['defense']['striking']['difference'] > 5:
-                key_advantages.append(f"{winner_name} has better striking defense ({advantages['defense']['striking']['values'][0 if is_fighter1_winner else 1]:.0f}% vs. {advantages['defense']['striking']['values'][1 if is_fighter1_winner else 0]:.0f}%)")
-        
-        # Momentum advantages
-        if advantages['momentum']['current_streak']['fighter'] == ('fighter1' if is_fighter1_winner else 'fighter2'):
-            winner_streak = advantages['momentum']['current_streak']['values'][0 if is_fighter1_winner else 1]
-            loser_streak = advantages['momentum']['current_streak']['values'][1 if is_fighter1_winner else 0]
-            if winner_streak > 0 and loser_streak <= 0:
-                key_advantages.append(f"{winner_name} has positive momentum with a {winner_streak}-fight win streak, while {loser_name} has been struggling")
-        
-        # Include key advantages in analysis
-        if key_advantages:
-            if len(key_advantages) > 1:
-                analysis.append(f"{winner_name} holds key advantages including {', '.join(key_advantages[:2])}.")
-            else:
-                analysis.append(f"{winner_name} holds a key advantage: {key_advantages[0]}.")
-            
-        # Check for major advantages for the predicted loser
-        loser_advantages = []
-        
-        # Striking advantages for loser
-        if advantages['striking']['volume']['fighter'] == ('fighter2' if is_fighter1_winner else 'fighter1'):
-            if advantages['striking']['volume']['percentage'] > 20:
-                loser_advantages.append(f"higher striking output ({advantages['striking']['volume']['values'][1 if is_fighter1_winner else 0]:.1f} vs. {advantages['striking']['volume']['values'][0 if is_fighter1_winner else 1]:.1f} strikes per minute)")
-        
-        # Add loser's advantages to analysis
-        if loser_advantages:
-            analysis.append(f"Despite the prediction, {loser_name} does have some advantages, including {loser_advantages[0]}.")
-        
-        # Path to victory for winner - taking style into account
-        win_path = []
-        
-        if winner_style == 'grappler' or winner_style == 'wrestler':
-            win_path.append(f"secure takedowns and control {loser_name} on the ground")
-            if safe_convert_to_float(winner_data.get('sub_avg', 0)) > 0.5:
-                win_path.append(f"look for submission opportunities")
-            else:
-                win_path.append(f"maintain dominant positions and wear down {loser_name}")
-        elif winner_style == 'striker':
-            if safe_convert_to_float(winner_data.get('td_def', 0)) > safe_convert_to_float(loser_data.get('td_acc', 0)):
-                win_path.append(f"maintain distance and defend takedowns")
-            win_path.append(f"utilize their striking advantage")
-            if 'reach' in advantages['physical'] and advantages['physical']['reach']['fighter'] == ('fighter1' if is_fighter1_winner else 'fighter2'):
-                win_path.append(f"use their reach advantage to keep {loser_name} at bay")
-        
-        if win_path:
-            analysis.append(f"The path to victory for {winner_name} is to {', '.join(win_path)}.")
-        
-        # Path for the underdog
-        lose_path = []
-        
-        if loser_style == 'grappler' or loser_style == 'wrestler':
-            if winner_style == 'striker':
-                lose_path.append(f"close the distance quickly and get the fight to the ground")
-                lose_path.append(f"avoid striking exchanges at range")
-            else:
-                lose_path.append(f"push the pace and look for opportunities to establish dominant positions")
-        elif loser_style == 'striker':
-            if winner_style == 'grappler' or winner_style == 'wrestler':
-                lose_path.append(f"defend takedowns and keep the fight standing")
-                lose_path.append(f"use footwork to maintain distance")
-            else:
-                lose_path.append(f"exploit any openings in {winner_name}'s striking defense")
-        
-        if lose_path:
-            analysis.append(f"While {loser_name} still has a {100-confidence:.0f}% chance to win if they can {', '.join(lose_path)}.")
-        
-        # Conclusion
-        if winner_rank and loser_rank and winner_rank != 'C' and loser_rank != 'C':
-            # Both fighters are ranked
-            rank_diff = abs(int(winner_rank) - int(loser_rank))
-            if rank_diff > 5:
-                analysis.append(f"Given the {rank_diff} rank difference, this prediction aligns with the UFC's official rankings.")
-        
-        # Final prediction statement
-        if winner_style == 'grappler' or winner_style == 'wrestler':
-            if loser_style == 'striker':
-                analysis.append(f"Our model predicts that {winner_name}'s grappling advantages will likely neutralize {loser_name}'s striking, leading to victory.")
-            else:
-                analysis.append(f"Our model predicts that {winner_name}'s superior grappling skills will likely lead to victory.")
-        elif winner_style == 'striker':
-            if loser_style == 'grappler' or loser_style == 'wrestler':
-                analysis.append(f"Our model predicts that {winner_name} will be able to keep the fight standing long enough to utilize their striking advantages for victory.")
-            else:
-                analysis.append(f"Our model predicts that {winner_name}'s striking advantages will likely lead to victory.")
+        # Determine advantage
+        if f1_striking.get("slpm", 0) > f2_striking.get("slpm", 0) * 1.2:
+            advantage = f"{fighter1_name} lands significantly more strikes"
+        elif f2_striking.get("slpm", 0) > f1_striking.get("slpm", 0) * 1.2:
+            advantage = f"{fighter2_name} lands significantly more strikes"
+        elif f1_striking.get("str_acc", 0) > f2_striking.get("str_acc", 0) * 1.2:
+            advantage = f"{fighter1_name} has better striking accuracy"
+        elif f2_striking.get("str_acc", 0) > f1_striking.get("str_acc", 0) * 1.2:
+            advantage = f"{fighter2_name} has better striking accuracy"
+        elif f1_striking.get("str_def", 0) > f2_striking.get("str_def", 0) * 1.2:
+            advantage = f"{fighter1_name} has better striking defense"
+        elif f2_striking.get("str_def", 0) > f1_striking.get("str_def", 0) * 1.2:
+            advantage = f"{fighter2_name} has better striking defense"
         else:
-            analysis.append(f"Our model predicts that {winner_name}'s advantages in key performance metrics will likely lead to victory.")
+            advantage = "Striking appears evenly matched"
         
-        return " ".join(analysis)
+        analysis["striking_comparison"] = {
+            "fighter1": f1_striking,
+            "fighter2": f2_striking,
+            "advantage": advantage
+        }
     except Exception as e:
-        logger.error(f"Error generating fight analysis: {str(e)}")
-        return f"Analysis unavailable. Error: {str(e)}"
+        logger.error(f"Error in striking comparison: {str(e)}")
+        analysis["striking_comparison"] = {"error": "Could not analyze striking"}
+    
+    # Grappling comparison
+    try:
+        f1_grappling = {}
+        f2_grappling = {}
+        
+        # Get grappling stats
+        for fighter, stats in [(fighter1_name, f1_grappling), (fighter2_name, f2_grappling)]:
+            data = fighter1_data if fighter == fighter1_name else fighter2_data
+            stats["td"] = float(data.get("TD", 0) or 0)
+            stats["td_acc"] = float(data.get("TDA", 0) or 0)
+            stats["td_def"] = float(data.get("TDD", 0) or 0)
+            stats["sub"] = float(data.get("SUB", 0) or 0)
+        
+        # Determine advantage
+        if f1_grappling.get("td", 0) > f2_grappling.get("td", 0) * 1.2:
+            advantage = f"{fighter1_name} has better takedowns"
+        elif f2_grappling.get("td", 0) > f1_grappling.get("td", 0) * 1.2:
+            advantage = f"{fighter2_name} has better takedowns"
+        elif f1_grappling.get("td_def", 0) > f2_grappling.get("td_def", 0) * 1.2:
+            advantage = f"{fighter1_name} has better takedown defense"
+        elif f2_grappling.get("td_def", 0) > f1_grappling.get("td_def", 0) * 1.2:
+            advantage = f"{fighter2_name} has better takedown defense"
+        elif f1_grappling.get("sub", 0) > f2_grappling.get("sub", 0) * 1.2:
+            advantage = f"{fighter1_name} has better submission skills"
+        elif f2_grappling.get("sub", 0) > f1_grappling.get("sub", 0) * 1.2:
+            advantage = f"{fighter2_name} has better submission skills"
+        else:
+            advantage = "Grappling appears evenly matched"
+        
+        analysis["grappling_comparison"] = {
+            "fighter1": f1_grappling,
+            "fighter2": f2_grappling,
+            "advantage": advantage
+        }
+    except Exception as e:
+        logger.error(f"Error in grappling comparison: {str(e)}")
+        analysis["grappling_comparison"] = {"error": "Could not analyze grappling"}
+    
+    # Physical comparison
+    try:
+        f1_physical = {}
+        f2_physical = {}
+        
+        # Get physical stats
+        for fighter, stats in [(fighter1_name, f1_physical), (fighter2_name, f2_physical)]:
+            data = fighter1_data if fighter == fighter1_name else fighter2_data
+            stats["height"] = float(data.get("Height", 0) or 0)
+            stats["weight"] = float(data.get("Weight", 0) or 0)
+            stats["reach"] = float(data.get("Reach", 0) or 0)
+        
+        # Determine advantage
+        if abs(f1_physical.get("height", 0) - f2_physical.get("height", 0)) > 2:
+            taller = fighter1_name if f1_physical.get("height", 0) > f2_physical.get("height", 0) else fighter2_name
+            advantage = f"{taller} has a significant height advantage"
+        elif abs(f1_physical.get("reach", 0) - f2_physical.get("reach", 0)) > 2:
+            longer = fighter1_name if f1_physical.get("reach", 0) > f2_physical.get("reach", 0) else fighter2_name
+            advantage = f"{longer} has a significant reach advantage"
+        else:
+            advantage = "Fighters are physically similar"
+        
+        analysis["physical_comparison"] = {
+            "fighter1": f1_physical,
+            "fighter2": f2_physical,
+            "advantage": advantage
+        }
+    except Exception as e:
+        logger.error(f"Error in physical comparison: {str(e)}")
+        analysis["physical_comparison"] = {"error": "Could not analyze physical attributes"}
+    
+    # Head-to-head history
+    if head_to_head and head_to_head.get("total_fights", 0) > 0:
+        analysis["history"]["head_to_head"] = head_to_head
+        
+        f1_wins = head_to_head.get("fighter1_wins", 0)
+        f2_wins = head_to_head.get("fighter2_wins", 0)
+        
+        if f1_wins > f2_wins:
+            analysis["history"]["h2h_advantage"] = f"{fighter1_name} has won more head-to-head fights"
+        elif f2_wins > f1_wins:
+            analysis["history"]["h2h_advantage"] = f"{fighter2_name} has won more head-to-head fights"
+        else:
+            analysis["history"]["h2h_advantage"] = "Head-to-head history is even"
+    
+    # Common opponents
+    if common_opponents and len(common_opponents) > 0:
+        analysis["history"]["common_opponents"] = common_opponents
+        analysis["history"]["common_opponents_count"] = len(common_opponents)
+    
+    # Prediction notes
+    if prediction_data:
+        winner = prediction_data.get("winner_name", "")
+        confidence = prediction_data.get("confidence", 0)
+        
+        if confidence > 0.8:
+            confidence_text = "very high"
+        elif confidence > 0.6:
+            confidence_text = "high"
+        elif confidence > 0.4:
+            confidence_text = "moderate"
+        else:
+            confidence_text = "low"
+        
+        analysis["prediction_notes"]["confidence_level"] = confidence_text
+        
+        if winner == fighter1_name:
+            analysis["prediction_notes"]["favorite"] = fighter1_name
+            analysis["prediction_notes"]["underdog"] = fighter2_name
+        else:
+            analysis["prediction_notes"]["favorite"] = fighter2_name
+            analysis["prediction_notes"]["underdog"] = fighter1_name
+    
+    return analysis
 
 def update_dict_recursive(target_dict: Dict[str, Any], source_dict: Dict[str, Any]) -> None:
     """

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Body, BackgroundTasks
 import logging
 import traceback
 from backend.ml.predictor import FighterPredictor
@@ -12,13 +12,16 @@ from backend.constants import (
     LOG_FORMAT,
     LOG_DATE_FORMAT,
     MODEL_PATH,
-    API_V1_PREFIX,
+    API_V1_STR,
     MAX_FIGHTS_DISPLAY
 )
 from typing import Dict, List, Optional, Any
 import json
 import re
 from urllib.parse import unquote
+from pydantic import BaseModel
+from backend.ml.model_loader import get_loaded_model, get_loaded_scaler, get_loaded_features, load_model
+from backend.ml.predictor_simple import predict_winner  # Using our simpler implementation
 
 # Set up logging
 logging.basicConfig(
@@ -28,10 +31,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix=f"{API_V1_PREFIX}/prediction")
+router = APIRouter(prefix=f"{API_V1_STR}/prediction", tags=["Predictions"])
 
 # Create predictor instance
 predictor = FighterPredictor()
+
+class FighterInput(BaseModel):
+    fighter1_name: str
+    fighter2_name: str
+
+class ModelInfoResponse(BaseModel):
+    model_loaded: bool
+    model_type: Optional[str] = None
+    feature_count: Optional[int] = None
+    important_features: Optional[List[str]] = None
 
 @router.get("/train")
 async def train_model():
@@ -186,348 +199,145 @@ def normalize_fighter_name(name: str) -> dict:
     
     return fighter_info
 
-@router.get("/predict/{fighter1_name}/{fighter2_name}")
-async def predict_winner(fighter1_name: str, fighter2_name: str):
-    """Predict the winner between two fighters"""
+@router.post("/predict")
+async def predict_fight(input_data: FighterInput):
+    """Predict the outcome of a fight between two fighters."""
     try:
-        logger.info(f"Prediction request for {fighter1_name} vs {fighter2_name}")
-        # Get fighter data from database
+        # Check if model is loaded
+        model = get_loaded_model()
+        if not model:
+            logger.warning("No model loaded. Attempting to load...")
+            load_model()
+            model = get_loaded_model()
+            if not model:
+                logger.error("Failed to load model")
+                raise HTTPException(status_code=500, detail="Model not available")
+        
+        # Get database connection
         supabase = get_db_connection()
         if not supabase:
             logger.error("No database connection available")
             raise HTTPException(status_code=500, detail="Database connection error")
         
-        # Normalize fighter names and extract info
-        fighter1_info = normalize_fighter_name(fighter1_name)
-        fighter2_info = normalize_fighter_name(fighter2_name)
+        # Process fighter names (remove record if present)
+        fighter1_name = input_data.fighter1_name
+        fighter2_name = input_data.fighter2_name
         
-        logger.info(f"Normalized fighter 1: {fighter1_info}")
-        logger.info(f"Normalized fighter 2: {fighter2_info}")
+        if "(" in fighter1_name:
+            fighter1_name = fighter1_name.split("(")[0].strip()
         
-        # Get fighter 1 data using all available information
-        fighter1_data = None
-        fighter1_found = False
+        if "(" in fighter2_name:
+            fighter2_name = fighter2_name.split("(")[0].strip()
         
-        try:
-            # If we have weight class and record, try to use them for more precise matching
-            if fighter1_info['record']:
-                # Search by name and record
-                response = supabase.table('fighters')\
-                    .select('*')\
-                    .ilike('fighter_name', fighter1_info['name'])\
-                    .eq('Record', fighter1_info['record'])\
-                    .execute()
-                
-                if response.data and len(response.data) > 0:
-                    fighter1_data = response.data[0]
-            
-            # If we couldn't find with record, or if we didn't have record info
-            if not fighter1_data:
-                # Try just by name
-                response = supabase.table('fighters')\
-                    .select('*')\
-                    .ilike('fighter_name', fighter1_info['name'])\
-                    .execute()
-                
-                if response.data and len(response.data) > 0:
-                    fighter1_data = response.data[0]
-            
-            # If still not found, try with fuzzy search
-            if not fighter1_data:
-                response = supabase.table('fighters')\
-                    .select('*')\
-                    .ilike('fighter_name', f'%{fighter1_info["name"]}%')\
-                    .execute()
-                
-                if response.data and len(response.data) > 0:
-                    fighter1_data = response.data[0]
-            
-            fighter1_found = fighter1_data is not None
-            
-        except Exception as e:
-            logger.error(f"Error getting fighter 1 data: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error getting fighter 1 data: {str(e)}")
+        logger.info(f"Making prediction for {fighter1_name} vs {fighter2_name}")
         
-        if not fighter1_found:
+        # Fetch fighter stats from database
+        fighter1_response = supabase.table('fighters')\
+            .select('*')\
+            .eq('fighter_name', fighter1_name)\
+            .execute()
+        
+        fighter2_response = supabase.table('fighters')\
+            .select('*')\
+            .eq('fighter_name', fighter2_name)\
+            .execute()
+        
+        if not fighter1_response.data:
             raise HTTPException(status_code=404, detail=f"Fighter not found: {fighter1_name}")
-            
-        # Get fighter 2 data using all available information
-        fighter2_data = None
-        fighter2_found = False
         
-        try:
-            # If we have weight class and record, try to use them for more precise matching
-            if fighter2_info['record']:
-                # Search by name and record
-                response = supabase.table('fighters')\
-                    .select('*')\
-                    .ilike('fighter_name', fighter2_info['name'])\
-                    .eq('Record', fighter2_info['record'])\
-                    .execute()
-                
-                if response.data and len(response.data) > 0:
-                    fighter2_data = response.data[0]
-            
-            # If we couldn't find with record, or if we didn't have record info
-            if not fighter2_data:
-                # Try just by name
-                response = supabase.table('fighters')\
-                    .select('*')\
-                    .ilike('fighter_name', fighter2_info['name'])\
-                    .execute()
-                
-                if response.data and len(response.data) > 0:
-                    fighter2_data = response.data[0]
-            
-            # If still not found, try with fuzzy search
-            if not fighter2_data:
-                response = supabase.table('fighters')\
-                    .select('*')\
-                    .ilike('fighter_name', f'%{fighter2_info["name"]}%')\
-                    .execute()
-                
-                if response.data and len(response.data) > 0:
-                    fighter2_data = response.data[0]
-            
-            fighter2_found = fighter2_data is not None
-            
-        except Exception as e:
-            logger.error(f"Error getting fighter 2 data: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error getting fighter 2 data: {str(e)}")
-        
-        if not fighter2_found:
+        if not fighter2_response.data:
             raise HTTPException(status_code=404, detail=f"Fighter not found: {fighter2_name}")
-            
-        # Get recent fights for both fighters
-        try:
-            # Get fighter 1's last 5 fights
-            fights_response = supabase.table('fighter_last_5_fights')\
-                .select('*')\
-                .eq('fighter_name', fighter1_data['fighter_name'])\
-                .order('id')\
-                .limit(5)\
-                .execute()
-                
-            fighter1_last_5_fights = fights_response.data if fights_response.data else []
-            
-            # Get fighter 2's last 5 fights
-            fights_response = supabase.table('fighter_last_5_fights')\
-                .select('*')\
-                .eq('fighter_name', fighter2_data['fighter_name'])\
-                .order('id')\
-                .limit(5)\
-                .execute()
-                
-            fighter2_last_5_fights = fights_response.data if fights_response.data else []
-            
-        except Exception as e:
-            logger.error(f"Error getting fighter fight data: {str(e)}")
-            fighter1_last_5_fights = []
-            fighter2_last_5_fights = []
         
-        # Format fighter data for prediction
-        fighter1_dict = format_fighter_data(fighter1_data, fighter1_last_5_fights)
-        fighter2_dict = format_fighter_data(fighter2_data, fighter2_last_5_fights)
-        
-        # Add unique_id to help identify fighters
-        fighter1_dict['unique_id'] = str(fighter1_data.get('id', "unknown"))
-        fighter2_dict['unique_id'] = str(fighter2_data.get('id', "unknown"))
-        
-        # Check if the same fighter is selected twice
-        if (fighter1_dict['unique_id'] and fighter2_dict['unique_id'] and 
-            fighter1_dict['unique_id'] == fighter2_dict['unique_id'] and 
-            fighter1_dict['unique_id'] != "unknown" and 
-            fighter1_dict['unique_id'] != "" and 
-            fighter2_dict['unique_id'] != "unknown" and 
-            fighter2_dict['unique_id'] != ""):
-            logger.warning(f"Same fighter selected twice with unique_id: {fighter1_dict['unique_id']}")
-            raise HTTPException(status_code=400, detail="Cannot predict a fighter against themselves. Please select two different fighters.")
-        
-        # Additional check - if both are "unknown" IDs, but the normalized names are identical, also block
-        if (fighter1_dict['unique_id'] == fighter2_dict['unique_id'] == "unknown" and 
-            fighter1_info['name'].lower() == fighter2_info['name'].lower()):
-            logger.warning(f"Same fighter selected twice based on identical name: {fighter1_info['name']}")
-            raise HTTPException(status_code=400, detail="Cannot predict a fighter against themselves. Please select two different fighters.")
-        
-        # Check for head-to-head matchups
-        h2h_data = {}
-        try:
-            # Check if fighter1 has fought fighter2
-            h2h_response = supabase.table('fighter_last_5_fights')\
-                .select('*')\
-                .eq('fighter_name', fighter1_data['fighter_name'])\
-                .eq('opponent', fighter2_data['fighter_name'])\
-                .execute()
-            
-            f1_vs_f2_fights = h2h_response.data if h2h_response.data else []
-            
-            # Check if fighter2 has fought fighter1
-            h2h_response = supabase.table('fighter_last_5_fights')\
-                .select('*')\
-                .eq('fighter_name', fighter2_data['fighter_name'])\
-                .eq('opponent', fighter1_data['fighter_name'])\
-                .execute()
-                
-            f2_vs_f1_fights = h2h_response.data if h2h_response.data else []
-            
-            # Process head-to-head data
-            if f1_vs_f2_fights or f2_vs_f1_fights:
-                h2h_data = {
-                    'fighter1_name': fighter1_data['fighter_name'],
-                    'fighter2_name': fighter2_data['fighter_name'],
-                    'fighter1_wins': 0,
-                    'fighter2_wins': 0,
-                    'draws': 0,
-                    'total_fights': len(f1_vs_f2_fights) + len(f2_vs_f1_fights)
-                }
-                
-                # Count wins for fighter1
-                for fight in f1_vs_f2_fights:
-                    result = fight.get('result', '').lower()
-                    if 'win' in result or result.startswith('w'):
-                        h2h_data['fighter1_wins'] += 1
-                    elif 'draw' in result or result.startswith('d'):
-                        h2h_data['draws'] += 1
-                
-                # Count wins for fighter2
-                for fight in f2_vs_f1_fights:
-                    result = fight.get('result', '').lower()
-                    if 'win' in result or result.startswith('w'):
-                        h2h_data['fighter2_wins'] += 1
-                    elif 'draw' in result or result.startswith('d'):
-                        h2h_data['draws'] += 1
-                
-                # Get the most recent fight
-                all_h2h_fights = f1_vs_f2_fights + f2_vs_f1_fights
-                if all_h2h_fights:
-                    # Sort by date (most recent first)
-                    all_h2h_fights.sort(key=lambda x: x.get('fight_date', ''), reverse=True)
-                    last_fight = all_h2h_fights[0]
-                    
-                    if last_fight.get('fighter_name') == fighter1_data['fighter_name']:
-                        result = last_fight.get('result', '').lower()
-                        if 'win' in result or result.startswith('w'):
-                            h2h_data['last_winner'] = fighter1_data['fighter_name']
-                        else:
-                            h2h_data['last_winner'] = fighter2_data['fighter_name']
-                    else:
-                        result = last_fight.get('result', '').lower()
-                        if 'win' in result or result.startswith('w'):
-                            h2h_data['last_winner'] = fighter2_data['fighter_name']
-                        else:
-                            h2h_data['last_winner'] = fighter1_data['fighter_name']
-                    
-                    h2h_data['last_method'] = last_fight.get('method', 'Decision')
-                    h2h_data['last_round'] = last_fight.get('round', 'N/A')
-                    h2h_data['last_time'] = last_fight.get('time', 'N/A')
-        
-        except Exception as e:
-            logger.error(f"Error getting head-to-head data: {str(e)}")
-            h2h_data = {}
-        
-        # Find common opponents
-        common_opponents = []
-        
-        # Get ranking information
-        fighter1_rank = fighter1_dict.get('ranking', '')
-        fighter2_rank = fighter2_dict.get('ranking', '')
-        fighter1_is_champion = bool(fighter1_dict.get('is_champion', 0))
-        fighter2_is_champion = bool(fighter2_dict.get('is_champion', 0))
-
-        # Get weight class information (if available)
-        fighter1_weight_class = ""
-        fighter2_weight_class = ""
-        
-        try:
-            # Try to get weight class for fighter 1
-            fighter1_weight_class = fighter1_dict.get('weight_class', '')
-        except (KeyError, AttributeError, TypeError):
-            fighter1_weight_class = ""
-            
-        try:
-            # Try to get weight class for fighter 2
-            fighter2_weight_class = fighter2_dict.get('weight_class', '')
-        except (KeyError, AttributeError, TypeError):
-            fighter2_weight_class = ""
-            
-        # Add ranking and weight class info to the data
-        fighter1_dict['ranking'] = fighter1_rank
-        fighter1_dict['is_champion'] = fighter1_is_champion
-        fighter1_dict['weight_class'] = fighter1_weight_class
-        
-        fighter2_dict['ranking'] = fighter2_rank
-        fighter2_dict['is_champion'] = fighter2_is_champion
-        fighter2_dict['weight_class'] = fighter2_weight_class
+        fighter1_data = fighter1_response.data[0]
+        fighter2_data = fighter2_response.data[0]
         
         # Make prediction
-        prediction = predictor.predict_winner(fighter1_dict, fighter2_dict, h2h_data, common_opponents)
-        
-        if 'error' in prediction:
-            logger.error(prediction['error'])
-            error_msg = prediction['error']
+        try:
+            # Call the predict_winner function from our predictor module
+            prediction_result = predict_winner(fighter1_data, fighter2_data)
             
-            # Check for feature mismatch error
-            if "has features, but StandardScaler is expecting" in error_msg:
-                error_msg = "The model needs to be retrained after the recent updates. Please click the 'Train Model' button and try again."
-            
-            raise HTTPException(status_code=500, detail=error_msg)
-        
-        # Generate detailed fight analysis
-        analysis = generate_matchup_analysis(
-            fighter1_dict, 
-            fighter2_dict, 
-            h2h_data,
-            common_opponents,
-            prediction
-        )
-        
-        # Add the analysis to the prediction
-        prediction['analysis'] = analysis
-        
-        # Add fighter details to the response
-        prediction['fighter1'] = {
-            'name': fighter1_dict['fighter_name'],
-            'image_url': fighter1_dict.get('image_url', ''),
-            'record': fighter1_dict.get('record', ''),
-            'stance': fighter1_dict.get('stance', ''),
-            'ranking': fighter1_rank,
-            'is_champion': fighter1_is_champion,
-            'weight_class': fighter1_weight_class,
-            'unique_id': fighter1_dict.get('unique_id', '')
-        }
-        
-        prediction['fighter2'] = {
-            'name': fighter2_dict['fighter_name'],
-            'image_url': fighter2_dict.get('image_url', ''),
-            'record': fighter2_dict.get('record', ''),
-            'stance': fighter2_dict.get('stance', ''),
-            'ranking': fighter2_rank,
-            'is_champion': fighter2_is_champion,
-            'weight_class': fighter2_weight_class,
-            'unique_id': fighter2_dict.get('unique_id', '')
-        }
-        
-        # Add head-to-head information
-        prediction['head_to_head'] = {
-            'fighter1_wins': h2h_data.get('fighter1_wins', 0),
-            'fighter2_wins': h2h_data.get('fighter2_wins', 0),
-            'last_winner': h2h_data.get('last_winner'),
-            'last_method': h2h_data.get('last_method', ''),
-            'last_round': h2h_data.get('last_round', 'N/A'),
-            'last_time': h2h_data.get('last_time', 'N/A')
-        }
-        
-        # Format prediction for API response
-        result = predictor.prepare_prediction_for_api(prediction)
-        return result
-            
-    except HTTPException as he:
-        # Re-raise HTTP exceptions to maintain their status codes
-        raise he
+            # Return formatted prediction result
+            return {
+                "fighter1": fighter1_name,
+                "fighter2": fighter2_name,
+                "predicted_winner": prediction_result["winner_name"],
+                "confidence": prediction_result["confidence"],
+                "probability": prediction_result["probability"],
+                "explanation": prediction_result.get("explanation", ""),
+                "matchup_analysis": prediction_result.get("matchup_analysis", {}),
+                "important_factors": prediction_result.get("important_factors", [])
+            }
+        except Exception as e:
+            logger.error(f"Error making prediction: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+    
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error in prediction: {str(e)}")
+        logger.error(f"Error in predict_fight: {str(e)}")
         logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+@router.get("/model-info")
+async def get_model_info():
+    """Get information about the loaded model."""
+    try:
+        model = get_loaded_model()
+        features = get_loaded_features()
+        
+        if not model:
+            return ModelInfoResponse(model_loaded=False)
+        
+        # Get model type
+        model_type = type(model).__name__
+        
+        # Get feature count
+        feature_count = len(features) if features else 0
+        
+        # Get important features (if available)
+        important_features = None
+        if hasattr(model, "feature_importances_") and features:
+            # Create a list of (feature_name, importance) tuples
+            feature_importances = [(features[i], model.feature_importances_[i]) 
+                                  for i in range(len(features))]
+            
+            # Sort by importance in descending order and take top 10
+            feature_importances.sort(key=lambda x: x[1], reverse=True)
+            important_features = [f[0] for f in feature_importances[:10]]
+        
+        return ModelInfoResponse(
+            model_loaded=True,
+            model_type=model_type,
+            feature_count=feature_count,
+            important_features=important_features
+        )
+    
+    except Exception as e:
+        logger.error(f"Error getting model info: {str(e)}")
+        return ModelInfoResponse(model_loaded=False)
+
+@router.post("/retrain")
+async def retrain_model(background_tasks: BackgroundTasks):
+    """Retrain the prediction model with the latest data."""
+    try:
+        # This is a placeholder for a more complex retraining process
+        # In a real implementation, we would:
+        # 1. Schedule a background task to retrain the model
+        # 2. Use the latest fighter data from the database
+        # 3. Train a new model and save it
+        # 4. Update the model metadata
+        
+        from backend.ml.train import train_model
+        
+        background_tasks.add_task(train_model)
+        
+        return {"message": "Model retraining scheduled"}
+    
+    except Exception as e:
+        logger.error(f"Error scheduling model retraining: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Retraining error: {str(e)}")
 
 @router.get("/status")
 async def model_status():

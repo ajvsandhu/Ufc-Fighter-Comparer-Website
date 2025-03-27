@@ -328,197 +328,68 @@ def extract_advanced_fighter_profile(
             'career_progression': 0
         }
 
-def extract_recent_fight_stats(last_5_fights: List[Dict[str, Any]]) -> Dict[str, float]:
+def extract_recent_fight_stats(fights: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Extract statistics from a fighter's last 5 fights.
-
-    This function processes recent fight data to calculate various performance metrics
-    including win percentage, striking stats, takedown stats, and finish rates.
-
+    Extract statistics from recent fights.
+    
     Args:
-        last_5_fights: List of dictionaries containing fight data for the last 5 fights
-
+        fights: List of recent fights
+        
     Returns:
-        Dict[str, float]: Dictionary containing calculated statistics including:
-            - recent_win_pct: Recent win percentage
-            - recent_kd_avg: Average knockdowns per fight
-            - recent_sig_str_avg: Average significant strikes landed per fight
-            - recent_td_avg: Average takedowns per fight
-            - recent_sub_attempts: Average submission attempts per fight
-            - recent_ctrl_time_avg: Average control time per fight
-            - finish_rate: Percentage of wins by finish
-            - ko_rate: Percentage of wins by KO/TKO
-            - sub_rate: Percentage of wins by submission
-            - decision_rate: Percentage of wins by decision
-            - winning_streak: Current winning streak
-            - losing_streak: Current losing streak
+        Dict with extracted statistics
     """
-    if not last_5_fights or len(last_5_fights) == 0:
+    if not fights:
         return {
-            'recent_win_pct': 0,
-            'recent_kd_avg': 0,
-            'recent_sig_str_avg': 0,
-            'recent_td_avg': 0,
-            'recent_sub_attempts': 0,
-            'recent_ctrl_time_avg': 0,
-            'finish_rate': 0,
-            'ko_rate': 0,
-            'sub_rate': 0,
-            'decision_rate': 0,
-            'winning_streak': 0,
-            'losing_streak': 0
+            "recent_win_ratio": 0.5,
+            "recent_finish_ratio": 0.0,
+            "win_streak": 0,
+            "loss_streak": 0
         }
     
-    try:
-        # Count wins, KO/TKOs, submissions, and decisions
-        win_count = 0
-        ko_count = 0
-        sub_count = 0
-        dec_count = 0
-        
-        # Performance metrics
-        recent_kd = 0  # Knockdowns
-        recent_sig_str_landed = 0  # Significant strikes landed
-        recent_sig_str_attempted = 0  # Significant strikes attempted 
-        recent_td_landed = 0  # Takedowns landed
-        recent_td_attempted = 0  # Takedowns attempted
-        recent_sub_attempts = 0  # Submission attempts
-        recent_ctrl_time = 0  # Control time (in seconds)
-        
-        # Streaks
-        current_streak = 0
-        winning_streak = 0
-        losing_streak = 0
-        
-        for i, fight in enumerate(last_5_fights):
-            if not isinstance(fight, dict):
-                continue
-            
-            # Process fight result
-            result = fight.get('result', '').lower()
-            is_win = result == 'win'
-            
-            # Update streaks
-            if is_win:
-                if current_streak > 0:
-                    current_streak += 1
-                else:
-                    current_streak = 1
-                win_count += 1
-            else:
-                if current_streak < 0:
-                    current_streak -= 1
-                else:
-                    current_streak = -1
-            
-            # Update max streaks
-            winning_streak = max(winning_streak, current_streak if current_streak > 0 else 0)
-            losing_streak = max(losing_streak, -current_streak if current_streak < 0 else 0)
-            
-            # Determine win type
-            method = fight.get('method', '').lower()
-            if is_win:
-                if 'ko' in method or 'tko' in method:
-                    ko_count += 1
-                elif 'submission' in method or 'sub' in method:
-                    sub_count += 1
-                elif 'decision' in method or 'dec' in method:
-                    dec_count += 1
-            
-            # Extract knockdowns
-            kd = safe_convert_to_float(fight.get('kd', 0))
-            recent_kd += kd
-            
-            # Extract significant strikes
-            sig_str = fight.get('sig_str', '0 of 0')
-            sig_landed, sig_attempted = extract_strikes_landed_attempted(sig_str)
-            recent_sig_str_landed += sig_landed
-            recent_sig_str_attempted += sig_attempted
-            
-            # Extract takedowns
-            td = fight.get('td', '0 of 0')
-            td_landed, td_attempted = extract_strikes_landed_attempted(td)
-            recent_td_landed += td_landed
-            recent_td_attempted += td_attempted
-            
-            # Extract submission attempts
-            sub_attempts = safe_convert_to_float(fight.get('sub_att', 0))
-            recent_sub_attempts += sub_attempts
-            
-            # Extract control time (convert from MM:SS to seconds)
-            ctrl_time = fight.get('ctrl', '0:00')
-            if isinstance(ctrl_time, str) and ':' in ctrl_time:
-                try:
-                    mins, secs = ctrl_time.split(':')
-                    recent_ctrl_time += (int(mins) * 60) + int(secs)
-                except (ValueError, TypeError):
-                    pass
-        
-        # Calculate averages and rates
-        num_fights = len(last_5_fights)
-        recent_win_pct = (win_count / num_fights) * 100
-        recent_kd_avg = recent_kd / num_fights
-        
-        # Striking accuracy
-        if recent_sig_str_attempted > 0:
-            recent_sig_str_acc = (recent_sig_str_landed / recent_sig_str_attempted) * 100
-        else:
-            recent_sig_str_acc = 0
-        
-        recent_sig_str_avg = recent_sig_str_landed / num_fights
-        
-        # Takedown accuracy
-        if recent_td_attempted > 0:
-            recent_td_acc = (recent_td_landed / recent_td_attempted) * 100
-        else:
-            recent_td_acc = 0
-        
-        recent_td_avg = recent_td_landed / num_fights
-        recent_sub_avg = recent_sub_attempts / num_fights
-        recent_ctrl_time_avg = recent_ctrl_time / num_fights
-        
-        # Calculate finish rates
-        if win_count > 0:
-            finish_rate = ((ko_count + sub_count) / win_count) * 100
-            ko_rate = (ko_count / win_count) * 100
-            sub_rate = (sub_count / win_count) * 100
-            decision_rate = (dec_count / win_count) * 100
-        else:
-            finish_rate = ko_rate = sub_rate = decision_rate = 0
-        
-        return {
-            'recent_win_pct': recent_win_pct,
-            'recent_kd_avg': recent_kd_avg,
-            'recent_sig_str_avg': recent_sig_str_avg,
-            'recent_sig_str_acc': recent_sig_str_acc,
-            'recent_td_avg': recent_td_avg,
-            'recent_td_acc': recent_td_acc,
-            'recent_sub_attempts': recent_sub_avg,
-            'recent_ctrl_time_avg': recent_ctrl_time_avg,
-            'finish_rate': finish_rate,
-            'ko_rate': ko_rate,
-            'sub_rate': sub_rate,
-            'decision_rate': decision_rate,
-            'winning_streak': winning_streak,
-            'losing_streak': losing_streak
-        }
+    stats = {
+        "recent_win_ratio": 0.5,
+        "recent_finish_ratio": 0.0,
+        "win_streak": 0,
+        "loss_streak": 0
+    }
     
-    except Exception as e:
-        logger.error(f"Error calculating fight metrics: {str(e)}")
-        return {
-            'recent_win_pct': 0,
-            'recent_kd_avg': 0,
-            'recent_sig_str_avg': 0,
-            'recent_td_avg': 0,
-            'recent_sub_attempts': 0,
-            'recent_ctrl_time_avg': 0,
-            'finish_rate': 0,
-            'ko_rate': 0,
-            'sub_rate': 0,
-            'decision_rate': 0,
-            'winning_streak': 0,
-            'losing_streak': 0
-        }
+    wins = 0
+    finishes = 0
+    
+    # Count wins and finishes
+    for fight in fights:
+        result = fight.get('result', '').lower()
+        if 'win' in result:
+            wins += 1
+            if 'ko' in result or 'tko' in result or 'sub' in result:
+                finishes += 1
+    
+    # Calculate ratios
+    if fights:
+        stats["recent_win_ratio"] = wins / len(fights)
+        stats["recent_finish_ratio"] = finishes / len(fights) if wins > 0 else 0.0
+    
+    # Calculate streaks
+    current_win_streak = 0
+    current_loss_streak = 0
+    
+    for fight in fights:
+        result = fight.get('result', '').lower()
+        if 'win' in result:
+            current_win_streak += 1
+            current_loss_streak = 0
+        elif 'loss' in result:
+            current_loss_streak += 1
+            current_win_streak = 0
+        else:
+            # Draw or no contest
+            current_win_streak = 0
+            current_loss_streak = 0
+    
+    stats["win_streak"] = current_win_streak
+    stats["loss_streak"] = current_loss_streak
+    
+    return stats
 
 def extract_style_features(fighter_data: Dict[str, Any]) -> Dict[str, int]:
     """Extract fighting style features based on stats and metadata"""
@@ -631,73 +502,93 @@ def extract_style_features(fighter_data: Dict[str, Any]) -> Dict[str, int]:
         logger.error(f"Error extracting style features: {str(e)}")
         return features
 
-def check_head_to_head(fighter1_fights: List[Dict[str, Any]], fighter2_name: str,
-                       fighter2_fights: List[Dict[str, Any]], fighter1_name: str) -> Dict[str, Any]:
-    """Check head-to-head record between two fighters"""
-    fighter1_wins = 0
-    fighter2_wins = 0
-    draws = 0
-    last_fight_date = None
-    last_winner = None
+def check_head_to_head(fighter1_fights: List[Dict[str, Any]], 
+                       fighter2_fights: List[Dict[str, Any]],
+                       fighter1_name: str,
+                       fighter2_name: str) -> Dict[str, Any]:
+    """
+    Check for head-to-head matchups between two fighters.
     
-    # Check fighter1's fights against fighter2
-    for fight in fighter1_fights:
-        if not isinstance(fight, dict):
-            continue
-            
-        opponent = fight.get('opponent', '')
-        if opponent == fighter2_name:
-            result = fight.get('result', '').lower()
-            if result == 'win':
-                fighter1_wins += 1
-                last_winner = fighter1_name
-            elif result == 'loss':
-                fighter2_wins += 1
-                last_winner = fighter2_name
-            elif result == 'draw':
-                draws += 1
-                last_winner = 'draw'
-            
-            # Update last fight date if newer
-            fight_date = fight.get('date', '')
-            if not last_fight_date or (fight_date and fight_date > last_fight_date):
-                last_fight_date = fight_date
-    
-    # Check fighter2's fights against fighter1 (as a backup)
-    if fighter1_wins == 0 and fighter2_wins == 0:
-        for fight in fighter2_fights:
-            if not isinstance(fight, dict):
-                continue
-                
-            opponent = fight.get('opponent', '')
-            if opponent == fighter1_name:
-                result = fight.get('result', '').lower()
-                if result == 'win':
-                    fighter2_wins += 1
-                    last_winner = fighter2_name
-                elif result == 'loss':
-                    fighter1_wins += 1
-                    last_winner = fighter1_name
-                elif result == 'draw':
-                    draws += 1
-                    last_winner = 'draw'
-                
-                # Update last fight date if newer
-                fight_date = fight.get('date', '')
-                if not last_fight_date or (fight_date and fight_date > last_fight_date):
-                    last_fight_date = fight_date
-    
-    total_fights = fighter1_wins + fighter2_wins + draws
-    
-    return {
-        'have_fought': total_fights > 0,
-        'fighter1_wins': fighter1_wins,
-        'fighter2_wins': fighter2_wins,
-        'draws': draws,
-        'total_fights': total_fights,
-        'last_fight_date': last_fight_date,
-        'last_winner': last_winner
+    Args:
+        fighter1_fights: List of fighter1's fights
+        fighter2_fights: List of fighter2's fights
+        fighter1_name: Name of fighter1
+        fighter2_name: Name of fighter2
+        
+    Returns:
+        Dict with head-to-head statistics
+    """
+    h2h = {
+        "total_fights": 0,
+        "fighter1_wins": 0,
+        "fighter2_wins": 0,
+        "draws": 0
     }
+    
+    # Check fighter1's fights for matches against fighter2
+    for fight in fighter1_fights:
+        opponent = fight.get('opponent', '')
+        if opponent.lower() == fighter2_name.lower():
+            h2h["total_fights"] += 1
+            result = fight.get('result', '').lower()
+            if 'win' in result:
+                h2h["fighter1_wins"] += 1
+            elif 'loss' in result:
+                h2h["fighter2_wins"] += 1
+            else:
+                # Draw or no contest
+                h2h["draws"] += 1
+    
+    # Check fighter2's fights for matches against fighter1
+    for fight in fighter2_fights:
+        opponent = fight.get('opponent', '')
+        if opponent.lower() == fighter1_name.lower():
+            # Only count if we haven't already counted this fight
+            # (should be the same fight from the other perspective)
+            if h2h["total_fights"] == 0:
+                h2h["total_fights"] += 1
+                result = fight.get('result', '').lower()
+                if 'win' in result:
+                    h2h["fighter2_wins"] += 1
+                elif 'loss' in result:
+                    h2h["fighter1_wins"] += 1
+                else:
+                    # Draw or no contest
+                    h2h["draws"] += 1
+    
+    return h2h
+
+def find_common_opponents(fighter1_fights: List[Dict[str, Any]], 
+                         fighter2_fights: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Find common opponents between two fighters.
+    
+    Args:
+        fighter1_fights: List of fighter1's fights
+        fighter2_fights: List of fighter2's fights
+        
+    Returns:
+        List of common opponents and result comparisons
+    """
+    if not fighter1_fights or not fighter2_fights:
+        return []
+    
+    # Get all opponents for each fighter
+    fighter1_opponents = {fight.get('opponent', '').lower(): fight for fight in fighter1_fights}
+    fighter2_opponents = {fight.get('opponent', '').lower(): fight for fight in fighter2_fights}
+    
+    # Find common opponents
+    common_opponents = []
+    
+    for opponent in fighter1_opponents:
+        if opponent in fighter2_opponents:
+            common_opponents.append({
+                "opponent": opponent,
+                "fighter1_result": fighter1_opponents[opponent].get('result', ''),
+                "fighter2_result": fighter2_opponents[opponent].get('result', '')
+            })
+    
+    return common_opponents
 
 def extract_physical_comparisons(fighter1_data: Dict[str, Any], fighter2_data: Dict[str, Any]) -> Dict[str, float]:
     """
@@ -959,90 +850,4 @@ def analyze_opponent_quality(fighter_fights: List[Dict[str, Any]], opponent_data
             'wins_against_grapplers': 0,
             'losses_against_grapplers': 0,
             'quality_score': 0
-        }
-
-def find_common_opponents(fighter1_fights: List[Dict[str, Any]], fighter2_fights: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Find common opponents between two fighters and compare their performances"""
-    if not fighter1_fights or not fighter2_fights:
-        return {
-            'common_opponents': [],
-            'common_opponents_count': 0,
-            'common_opponent_advantage': 0
-        }
-    
-    # Extract opponents for each fighter
-    fighter1_opponents = {}
-    for fight in fighter1_fights:
-        if not isinstance(fight, dict):
-            continue
-            
-        opponent = fight.get('opponent', '')
-        if not opponent:
-            continue
-            
-        result = fight.get('result', '').lower()
-        
-        # Only store the most recent fight against each opponent
-        if opponent not in fighter1_opponents:
-            fighter1_opponents[opponent] = {
-                'result': result,
-                'method': fight.get('method', ''),
-                'round': fight.get('round', 0),
-                'time': fight.get('time', ''),
-                'date': fight.get('date', '')
-            }
-    
-    fighter2_opponents = {}
-    for fight in fighter2_fights:
-        if not isinstance(fight, dict):
-            continue
-            
-        opponent = fight.get('opponent', '')
-        if not opponent:
-            continue
-            
-        result = fight.get('result', '').lower()
-        
-        # Only store the most recent fight against each opponent
-        if opponent not in fighter2_opponents:
-            fighter2_opponents[opponent] = {
-                'result': result,
-                'method': fight.get('method', ''),
-                'round': fight.get('round', 0),
-                'time': fight.get('time', ''),
-                'date': fight.get('date', '')
-            }
-    
-    # Find common opponents
-    common_opponents = []
-    advantage_score = 0
-    
-    for opponent in fighter1_opponents:
-        if opponent in fighter2_opponents:
-            fighter1_result = fighter1_opponents[opponent]['result']
-            fighter2_result = fighter2_opponents[opponent]['result']
-            
-            # Calculate advantage
-            # +1 if fighter1 won and fighter2 lost
-            # -1 if fighter2 won and fighter1 lost
-            # 0 if both had same result
-            advantage = 0
-            if fighter1_result == 'win' and fighter2_result != 'win':
-                advantage = 1
-            elif fighter2_result == 'win' and fighter1_result != 'win':
-                advantage = -1
-            
-            common_opponents.append({
-                'opponent': opponent,
-                'fighter1_result': fighter1_result,
-                'fighter2_result': fighter2_result,
-                'advantage': advantage
-            })
-            
-            advantage_score += advantage
-    
-    return {
-        'common_opponents': common_opponents,
-        'common_opponents_count': len(common_opponents),
-        'common_opponent_advantage': advantage_score
-    } 
+        } 

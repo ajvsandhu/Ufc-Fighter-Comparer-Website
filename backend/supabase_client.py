@@ -1,6 +1,12 @@
 """
-Supabase client module for UFC Fighter Showdown application.
-This module handles the connection to Supabase and provides database operations.
+Supabase client module for UFC Fighter Prediction API.
+
+This module provides the main interface to the Supabase database, handling
+connection, authentication, and CRUD operations for fighter data.
+
+IMPORTANT: This file has been made redundant by the get_db_connection function in 
+backend/api/database.py. Both solutions work, but we prefer the simplified approach
+from database.py for consistency.
 """
 
 import os

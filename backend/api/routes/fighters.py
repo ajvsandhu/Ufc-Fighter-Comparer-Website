@@ -6,7 +6,7 @@ from typing import List, Dict
 import logging
 from urllib.parse import unquote
 from backend.constants import (
-    API_V1_PREFIX,
+    API_V1_STR,
     MAX_SEARCH_RESULTS,
     MAX_FIGHTS_DISPLAY,
     DEFAULT_RECORD,
@@ -16,7 +16,7 @@ from backend.constants import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix=API_V1_PREFIX, tags=["Fighters"])
+router = APIRouter(prefix=API_V1_STR, tags=["Fighters"])
 
 @router.get("/fighters")
 def get_fighters(query: str = Query("", min_length=0)):

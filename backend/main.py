@@ -71,8 +71,8 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(fighters.router, prefix=API_V1_STR)
-app.include_router(predictions.router, prefix=API_V1_STR)
+app.include_router(fighters.router)
+app.include_router(predictions.router)
 
 @app.get("/")
 def read_root():
