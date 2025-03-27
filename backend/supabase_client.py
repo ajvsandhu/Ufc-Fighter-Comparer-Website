@@ -26,7 +26,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 # Connect to Supabase
 try:
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     logger.info(f"Initialized Supabase client with URL: {SUPABASE_URL}")
 except Exception as e:
     logger.error(f"Failed to create Supabase client: {e}")
