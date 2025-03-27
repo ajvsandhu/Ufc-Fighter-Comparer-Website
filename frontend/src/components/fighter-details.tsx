@@ -29,6 +29,22 @@ const DEFAULT_VALUE = "0"
 const DEFAULT_PERCENTAGE = "0%"
 const UNRANKED_VALUE = 99
 
+// Utility functions
+const safeParseFloat = (value: string | undefined): number => {
+  if (!value || typeof value !== 'string') return 0;
+  // Remove any non-numeric characters except decimal point
+  const sanitized = value.replace(/[^\d.]/g, '');
+  const num = parseFloat(sanitized);
+  return isNaN(num) ? 0 : num;
+};
+
+const safeReplacePercent = (value: string | undefined): string => {
+  if (!value || typeof value !== 'string') return '0%';
+  // Remove any existing % symbol and add it back
+  const sanitized = value.replace(/%/g, '').trim();
+  return `${sanitized}%`;
+};
+
 // Type definitions
 type FightResult = 'win' | 'loss' | 'draw' | 'nc'
 
@@ -78,7 +94,7 @@ const RESULT_COLORS: Record<FightResult, string> = {
   nc: 'text-gray-500'
 }
 
-// Simplified chart data calculations
+// Modified calculateChartData function with proper type handling
 function calculateChartData(stats: FighterStats | null): ChartDataSet {
   if (!stats) return {
     strikeData: [],
@@ -89,35 +105,44 @@ function calculateChartData(stats: FighterStats | null): ChartDataSet {
     strikeDistribution: []
   }
 
+  const slpm = safeParseFloat(stats.slpm);
+  const sapm = safeParseFloat(stats.sapm);
+  const strAcc = safeParseFloat(stats.str_acc);
+  const strDef = safeParseFloat(stats.str_def);
+  const tdAvg = safeParseFloat(stats.td_avg);
+  const subAvg = safeParseFloat(stats.sub_avg);
+  const tdAcc = safeParseFloat(stats.td_acc);
+  const tdDef = safeParseFloat(stats.td_def);
+
   return {
     strikeData: [
-      { name: 'Strikes Landed/min', value: parseFloat(stats.slpm) || 0, color: '#3b82f6' },
-      { name: 'Strikes Absorbed/min', value: parseFloat(stats.sapm) || 0, color: '#3b82f6' },
+      { name: 'Strikes Landed/min', value: slpm, color: '#3b82f6' },
+      { name: 'Strikes Absorbed/min', value: sapm, color: '#3b82f6' },
     ],
     strikeAccuracyData: [
-      { name: 'Strike Accuracy', value: parseFloat(stats.str_acc) || 0, color: '#3b82f6' },
-      { name: 'Strike Defense', value: parseFloat(stats.str_def) || 0, color: '#3b82f6' },
+      { name: 'Strike Accuracy', value: strAcc, color: '#3b82f6' },
+      { name: 'Strike Defense', value: strDef, color: '#3b82f6' },
     ],
     grappleData: [
-      { name: 'Takedowns/15min', value: parseFloat(stats.td_avg) || 0, color: '#3b82f6' },
-      { name: 'Submissions/15min', value: parseFloat(stats.sub_avg) || 0, color: '#3b82f6' },
+      { name: 'Takedowns/15min', value: tdAvg, color: '#3b82f6' },
+      { name: 'Submissions/15min', value: subAvg, color: '#3b82f6' },
     ],
     grappleAccuracyData: [
-      { name: 'Takedown Accuracy', value: parseFloat(stats.td_acc) || 0, color: '#3b82f6' },
-      { name: 'Takedown Defense', value: parseFloat(stats.td_def) || 0, color: '#3b82f6' },
+      { name: 'Takedown Accuracy', value: tdAcc, color: '#3b82f6' },
+      { name: 'Takedown Defense', value: tdDef, color: '#3b82f6' },
     ],
     overallStats: [
-      { subject: 'Strike Power', A: (parseFloat(stats.slpm) / 10) * 100 || 0 },
-      { subject: 'Strike Defense', A: parseFloat(stats.str_def) || 0 },
-      { subject: 'Grappling', A: (parseFloat(stats.td_avg) / 5) * 100 || 0 },
-      { subject: 'Submission', A: (parseFloat(stats.sub_avg) / 2) * 100 || 0 },
-      { subject: 'Accuracy', A: parseFloat(stats.str_acc) || 0 },
+      { subject: 'Strike Power', A: (slpm / 10) * 100 || 0 },
+      { subject: 'Strike Defense', A: strDef || 0 },
+      { subject: 'Grappling', A: (tdAvg / 5) * 100 || 0 },
+      { subject: 'Submission', A: (subAvg / 2) * 100 || 0 },
+      { subject: 'Accuracy', A: strAcc || 0 },
     ],
     strikeDistribution: (() => {
-      const totalStrikes = parseFloat(stats.slpm) + parseFloat(stats.sapm);
+      const totalStrikes = slpm + sapm;
       return [
-        { name: 'Strikes Landed', value: parseFloat(stats.slpm), percentage: (parseFloat(stats.slpm) / totalStrikes) * 100 },
-        { name: 'Strikes Absorbed', value: parseFloat(stats.sapm), percentage: (parseFloat(stats.sapm) / totalStrikes) * 100 },
+        { name: 'Strikes Landed', value: slpm, percentage: totalStrikes > 0 ? (slpm / totalStrikes) * 100 : 0 },
+        { name: 'Strikes Absorbed', value: sapm, percentage: totalStrikes > 0 ? (sapm / totalStrikes) * 100 : 0 },
       ];
     })()
   }
@@ -148,6 +173,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
 
         const data = await response.json();
         console.log("Raw fighter data received:", data);
+        console.log("Raw fighter data type:", typeof data);
         
         // Log all keys in the response to help debugging
         console.log("Response data keys:", Object.keys(data));
@@ -157,6 +183,23 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
           console.log(`Found ${data.last_5_fights.length} fights in the response:`, data.last_5_fights);
         } else {
           console.warn("No last_5_fights found in the response");
+          
+          // Try looking for fights under other keys
+          const possibleKeys = ['last_5_fights', 'fights', 'fight_history', 'fightHistory'];
+          let foundFights = false;
+          
+          for (const key of possibleKeys) {
+            if (data[key] && Array.isArray(data[key]) && data[key].length > 0) {
+              console.log(`Found fights under key: ${key}`);
+              data.last_5_fights = data[key];
+              foundFights = true;
+              break;
+            }
+          }
+          
+          if (!foundFights) {
+            console.warn("Could not find fights under any expected keys");
+          }
         }
         
         // Map and sanitize fight history data if available
@@ -195,6 +238,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
           : [];
           
         console.log("Processed fight history:", processedFightHistory);
+        console.log("Processed fight history length:", processedFightHistory.length);
         
         // Properly map API fields to our expected structure
         const sanitizedData: Record<string, any> = {
@@ -249,31 +293,6 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
   // Calculate fight stats
   const fightStats = React.useMemo<FightStatCategory[]>(() => {
     if (!stats) return [];
-    
-    const safeParseFloat = (value: string) => {
-      try {
-        if (!value || typeof value !== 'string') return 0;
-        // Remove any non-numeric characters except decimal point
-        const sanitized = value.replace(/[^\d.]/g, '');
-        const num = parseFloat(sanitized);
-        return isNaN(num) ? 0 : num;
-      } catch (e) {
-        console.error(`Error parsing value: ${value}`, e);
-        return 0;
-      }
-    };
-    
-    const safeReplacePercent = (value: string) => {
-      try {
-        if (!value || typeof value !== 'string') return '0%';
-        // Remove any existing % symbol and add it back
-        const sanitized = value.replace(/%/g, '').trim();
-        return `${sanitized}%`;
-      } catch (e) {
-        console.error(`Error processing percent: ${value}`, e);
-        return '0%';
-      }
-    };
     
     return [
       { 
@@ -362,68 +381,73 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
   }
 
   // Fight history tab content
-  const FightHistoryView = () => (
-    <div className="space-y-8 py-4 animate-in slide-in-from-bottom duration-700">
-      <h4 className="text-xl font-semibold">Last {fightHistory.length} Fights</h4>
-      
-      {fightHistory.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">
-          <p>No fight history available</p>
-          <p className="text-sm mt-2">If you believe this fighter should have fight data, please check back later.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {fightHistory.map((fight, index) => {
-            // Ensure fight object is valid
-            if (!fight) return null;
-            
-            // Use database field names with fallbacks for display
-            const displayName = fight.opponent_display_name || fight.opponent || fight.opponent_name || 'Unknown Opponent';
-            const fightDate = fight.fight_date || fight.date || 'Unknown Date';
-            const fightResult = fight.result || 'NC';
-            
-            return (
-              <Card key={`${displayName}-${fightDate}-${index}`} className="overflow-hidden">
-                <CardContent className="p-0">
-                  <div 
-                    className={`p-4 cursor-pointer hover:bg-accent/10 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                      expandedFight === index ? 'bg-accent/10' : ''
-                    }`}
-                    onClick={() => setExpandedFight(expandedFight === index ? null : index)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-4 h-4 rounded-full ${
-                        fightResult.toLowerCase() === 'win' ? 'bg-green-500' : 
-                        fightResult.toLowerCase() === 'loss' ? 'bg-red-500' : 
-                        'bg-yellow-500'
-                      }`} />
-                      <div>
-                        <p className="font-medium">{displayName}</p>
-                        <p className="text-sm text-muted-foreground">{fightDate}</p>
+  const FightHistoryView = () => {
+    console.log("FightHistoryView rendering, fightHistory:", fightHistory);
+    console.log("FightHistoryView fightHistory length:", fightHistory.length);
+    
+    return (
+      <div className="space-y-8 py-4 animate-in slide-in-from-bottom duration-700">
+        <h4 className="text-xl font-semibold">Last {fightHistory.length} Fights</h4>
+        
+        {fightHistory.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <p>No fight history available</p>
+            <p className="text-sm mt-2">If you believe this fighter should have fight data, please check back later.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {fightHistory.map((fight, index) => {
+              // Ensure fight object is valid
+              if (!fight) return null;
+              
+              // Use database field names with fallbacks for display
+              const displayName = getStat(fight.opponent_display_name || fight.opponent || fight.opponent_name);
+              const fightDate = getStat(fight.fight_date || fight.date);
+              const fightResult = getStat(fight.result, 'NC');
+              
+              return (
+                <Card key={`${displayName}-${fightDate}-${index}`} className="overflow-hidden">
+                  <CardContent className="p-0">
+                    <div 
+                      className={`p-4 cursor-pointer hover:bg-accent/10 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                        expandedFight === index ? 'bg-accent/10' : ''
+                      }`}
+                      onClick={() => setExpandedFight(expandedFight === index ? null : index)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-4 h-4 rounded-full ${
+                          fightResult.toLowerCase() === 'win' ? 'bg-green-500' : 
+                          fightResult.toLowerCase() === 'loss' ? 'bg-red-500' : 
+                          'bg-yellow-500'
+                        }`} />
+                        <div>
+                          <p className="font-medium">{displayName}</p>
+                          <p className="text-sm text-muted-foreground">{fightDate}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <div>
+                          <p className="text-sm">Method</p>
+                          <p className="font-medium">{getStat(fight.method)}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm">Round</p>
+                          <p className="font-medium">{fight.round || '--'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm">Time</p>
+                          <p className="font-medium">{getStat(fight.time)}</p>
+                        </div>
+                        <div>
+                          <ChevronDown
+                            className={`h-5 w-5 transition-transform ${
+                              expandedFight === index ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-6">
-                      <div>
-                        <p className="text-sm">Method</p>
-                        <p className="font-medium">{fight.method || 'Unknown'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm">Round</p>
-                        <p className="font-medium">{fight.round || '--'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm">Time</p>
-                        <p className="font-medium">{fight.time || '--'}</p>
-                      </div>
-                      <div>
-                        <ChevronDown
-                          className={`h-5 w-5 transition-transform ${
-                            expandedFight === index ? 'rotate-180' : ''
-                          }`}
-                        />
-                      </div>
-                    </div>
-                  </div>
+                  </CardContent>
                   
                   {/* Expanded fight stats */}
                   {expandedFight === index && (
@@ -432,25 +456,25 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                         {fight.kd && (
                           <div>
                             <p className="text-sm text-muted-foreground">Knockdowns</p>
-                            <p className="font-medium">{fight.kd}</p>
+                            <p className="font-medium">{getStat(fight.kd)}</p>
                           </div>
                         )}
                         {fight.sig_str && (
                           <div>
                             <p className="text-sm text-muted-foreground">Sig. Strikes</p>
-                            <p className="font-medium">{fight.sig_str} {fight.sig_str_pct ? `(${fight.sig_str_pct})` : ''}</p>
+                            <p className="font-medium">{getStat(fight.sig_str)} {fight.sig_str_pct ? `(${getStat(fight.sig_str_pct)})` : ''}</p>
                           </div>
                         )}
                         {fight.total_str && (
                           <div>
                             <p className="text-sm text-muted-foreground">Total Strikes</p>
-                            <p className="font-medium">{fight.total_str}</p>
+                            <p className="font-medium">{getStat(fight.total_str)}</p>
                           </div>
                         )}
                         {fight.takedowns && (
                           <div>
                             <p className="text-sm text-muted-foreground">Takedowns</p>
-                            <p className="font-medium">{fight.takedowns} {fight.td_pct ? `(${fight.td_pct})` : ''}</p>
+                            <p className="font-medium">{getStat(fight.takedowns)} {fight.td_pct ? `(${getStat(fight.td_pct)})` : ''}</p>
                           </div>
                         )}
                       </div>
@@ -461,19 +485,19 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                             {fight.head_str && (
                               <div>
                                 <p className="text-sm text-muted-foreground">Head</p>
-                                <p className="font-medium">{fight.head_str}</p>
+                                <p className="font-medium">{getStat(fight.head_str)}</p>
                               </div>
                             )}
                             {fight.body_str && (
                               <div>
                                 <p className="text-sm text-muted-foreground">Body</p>
-                                <p className="font-medium">{fight.body_str}</p>
+                                <p className="font-medium">{getStat(fight.body_str)}</p>
                               </div>
                             )}
                             {fight.leg_str && (
                               <div>
                                 <p className="text-sm text-muted-foreground">Leg</p>
-                                <p className="font-medium">{fight.leg_str}</p>
+                                <p className="font-medium">{getStat(fight.leg_str)}</p>
                               </div>
                             )}
                           </div>
@@ -482,24 +506,24 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                       {fight.ctrl && fight.ctrl !== '0:00' && (
                         <div className="mt-4 border-t border-border/50 pt-4">
                           <p className="text-sm text-muted-foreground">Control Time</p>
-                          <p className="font-medium">{fight.ctrl}</p>
+                          <p className="font-medium">{getStat(fight.ctrl)}</p>
                         </div>
                       )}
                       {fight.event && (
                         <div className="mt-4 border-t border-border/50 pt-4 text-sm text-muted-foreground">
-                          <p>{fight.event}</p>
+                          <p>{getStat(fight.event)}</p>
                         </div>
                       )}
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Overview tab content
   const OverviewView = () => {
@@ -669,7 +693,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                   { label: 'Reach', value: stats.reach || 'N/A' },
                   { label: 'Stance', value: stats.stance || 'N/A' },
                   { label: 'DOB', value: stats.dob ? `${stats.dob} ${calculateAge(stats.dob) ? `(${calculateAge(stats.dob)} years)` : ''}` : 'N/A' },
-                  { label: 'Ranking', value: stats.ranking === 99 || stats.ranking === '99' ? 'Unranked' : `#${stats.ranking || 'N/A'}` },
+                  { label: 'Ranking', value: Number(stats.ranking) === 99 || stats.ranking === '99' ? 'Unranked' : `#${stats.ranking || 'N/A'}` },
                 ].map(({ label, value }, index) => (
                   <div 
                     key={label} 
@@ -709,22 +733,22 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                     <div className="grid grid-cols-2 gap-4 mb-6">
                       <div className="space-y-2 p-4 bg-accent/10 rounded-lg">
                         <p className="text-sm text-muted-foreground">Strikes Landed per min</p>
-                        <p className="text-3xl font-bold">{parseFloat(stats.slpm).toFixed(1)}</p>
+                        <p className="text-3xl font-bold">{safeParseFloat(stats.slpm).toFixed(1)}</p>
                         <p className="text-sm text-muted-foreground">Striking Output</p>
                       </div>
                       <div className="space-y-2 p-4 bg-accent/10 rounded-lg">
                         <p className="text-sm text-muted-foreground">Strike Accuracy</p>
-                        <p className="text-3xl font-bold">{stats.str_acc}</p>
+                        <p className="text-3xl font-bold">{safeParseFloat(stats.str_acc).toFixed(1)}</p>
                         <p className="text-sm text-muted-foreground">Strike Success Rate</p>
                       </div>
                       <div className="space-y-2 p-4 bg-accent/10 rounded-lg">
                         <p className="text-sm text-muted-foreground">Strikes Absorbed per min</p>
-                        <p className="text-3xl font-bold">{parseFloat(stats.sapm).toFixed(1)}</p>
+                        <p className="text-3xl font-bold">{safeParseFloat(stats.sapm).toFixed(1)}</p>
                         <p className="text-sm text-muted-foreground">Strikes Received</p>
                       </div>
                       <div className="space-y-2 p-4 bg-accent/10 rounded-lg">
                         <p className="text-sm text-muted-foreground">Strike Defense</p>
-                        <p className="text-3xl font-bold">{stats.str_def}</p>
+                        <p className="text-3xl font-bold">{safeParseFloat(stats.str_def).toFixed(1)}</p>
                         <p className="text-sm text-muted-foreground">Strike Evasion Rate</p>
                       </div>
                     </div>
@@ -822,22 +846,22 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                     <div className="grid grid-cols-2 gap-4 mb-6">
                       <div className="space-y-2 p-4 bg-accent/10 rounded-lg">
                         <p className="text-sm text-muted-foreground">Takedowns per 15 min</p>
-                        <p className="text-3xl font-bold">{parseFloat(stats.td_avg).toFixed(1)}</p>
+                        <p className="text-3xl font-bold">{safeParseFloat(stats.td_avg).toFixed(1)}</p>
                         <p className="text-sm text-muted-foreground">Grappling Frequency</p>
                       </div>
                       <div className="space-y-2 p-4 bg-accent/10 rounded-lg">
                         <p className="text-sm text-muted-foreground">Takedown Accuracy</p>
-                        <p className="text-3xl font-bold">{stats.td_acc}</p>
+                        <p className="text-3xl font-bold">{safeParseFloat(stats.td_acc).toFixed(1)}</p>
                         <p className="text-sm text-muted-foreground">Takedown Success Rate</p>
                       </div>
                       <div className="space-y-2 p-4 bg-accent/10 rounded-lg">
                         <p className="text-sm text-muted-foreground">Takedown Defense</p>
-                        <p className="text-3xl font-bold">{stats.td_def}</p>
+                        <p className="text-3xl font-bold">{safeParseFloat(stats.td_def).toFixed(1)}</p>
                         <p className="text-sm text-muted-foreground">Takedown Prevention</p>
                       </div>
                       <div className="space-y-2 p-4 bg-accent/10 rounded-lg">
                         <p className="text-sm text-muted-foreground">Submissions per 15 min</p>
-                        <p className="text-3xl font-bold">{parseFloat(stats.sub_avg).toFixed(1)}</p>
+                        <p className="text-3xl font-bold">{safeParseFloat(stats.sub_avg).toFixed(1)}</p>
                         <p className="text-sm text-muted-foreground">Submission Threat</p>
                       </div>
                     </div>
