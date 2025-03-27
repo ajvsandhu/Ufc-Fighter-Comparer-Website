@@ -699,6 +699,7 @@ def process_fighter(
 ) -> bool:
     """
     Process fighter data and update their Tapology information.
+    Skips processing if fighter already has either a valid Tapology image or link.
     """
     try:
         name, current_image, current_tap_link = fighter_data
@@ -707,9 +708,15 @@ def process_fighter(
         logger.debug(f"Current image: {current_image}")
         logger.debug(f"Current link: {current_tap_link}")
         
+        # Skip if fighter has a valid Tapology image
         has_tapology_image = current_image and 'images.tapology.com/letterbox_images/' in current_image
-        if has_tapology_image and current_tap_link:
-            logger.debug(f"Skipping {name}: already complete")
+        if has_tapology_image:
+            logger.debug(f"Skipping {name}: already has valid Tapology image")
+            return True
+            
+        # Skip if fighter has a valid Tapology link
+        if current_tap_link:
+            logger.debug(f"Skipping {name}: already has Tapology link")
             return True
             
         tap_url = search_tapology_for_fighter(name)

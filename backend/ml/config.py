@@ -17,7 +17,7 @@ from backend.constants import (
     LOG_LEVEL,
     LOG_FORMAT,
     LOG_DATE_FORMAT,
-    MODEL_VERSION
+    APP_VERSION
 )
 
 # Configuration Constants

@@ -44,9 +44,9 @@ from backend.ml.fight_analysis import generate_matchup_analysis
 from backend.constants import (
     MODEL_PATH,
     SCALER_PATH,
-    FEATURE_NAMES_PATH,
+    FEATURES_PATH,
     MODEL_INFO_PATH,
-    MODEL_VERSION,
+    APP_VERSION,
     LOG_LEVEL,
     LOG_FORMAT,
     LOG_DATE_FORMAT,
@@ -99,7 +99,7 @@ class FighterPredictor:
         self.scaler = None
         self.feature_names = None
         self.model_info = {
-            'version': MODEL_VERSION,
+            'version': APP_VERSION,
             'accuracy': 0.0,
             'status': 'Initializing',
             'last_trained': None,
@@ -153,11 +153,11 @@ class FighterPredictor:
                     dummy_data = np.array([[0] * 28])
                     self.scaler.fit(dummy_data)
                     
-                if os.path.exists(FEATURE_NAMES_PATH):
+                if os.path.exists(FEATURES_PATH):
                     try:
-                        self.feature_names = joblib.load(FEATURE_NAMES_PATH)
+                        self.feature_names = joblib.load(FEATURES_PATH)
                     except Exception:
-                        with open(FEATURE_NAMES_PATH, 'rb') as f:
+                        with open(FEATURES_PATH, 'rb') as f:
                             self.feature_names = pickle.load(f)
                 else:
                     self.logger.debug("Creating default feature names")

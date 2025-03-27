@@ -59,8 +59,10 @@ RANKINGS_CACHE_TIMEOUT = int(os.getenv('RANKINGS_CACHE_TIMEOUT', 86400))
 MODEL_PATH = os.path.join("backend", "ml", "models", "model.pkl")
 SCALER_PATH = os.path.join("backend", "ml", "models", "scaler.pkl")
 FEATURES_PATH = os.path.join("backend", "ml", "models", "features.pkl")
+FEATURE_NAMES_PATH = FEATURES_PATH
 MODEL_INFO_FILENAME = "model_info.json"
 MODEL_INFO_PATH = MODELS_DIR / MODEL_INFO_FILENAME
+MODEL_VERSION = os.getenv("MODEL_VERSION", APP_VERSION)
 
 # Web Scraping Configuration
 REQUEST_HEADERS = {
