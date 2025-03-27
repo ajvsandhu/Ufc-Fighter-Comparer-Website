@@ -592,15 +592,33 @@ class FighterPredictor:
                 self.logger.error("No database connection available")
                 return None, None
                 
-            # Get all fighters from the database
+            # Get all fighters from the database - without a limit to get ALL fighters
             try:
-                # Use a simpler query to avoid errors
-                response = supabase.table("fighters").select("fighter_name").execute()
-                if not response.data or len(response.data) == 0:
+                # Use paging to retrieve all fighters
+                all_fighters = []
+                page_size = 1000
+                current_offset = 0
+                
+                while True:
+                    # Use pagination to get beyond any API record limit
+                    response = supabase.table("fighters").select("fighter_name").range(current_offset, current_offset + page_size - 1).execute()
+                    
+                    if not response.data or len(response.data) == 0:
+                        break  # No more data
+                        
+                    all_fighters.extend(response.data)
+                    
+                    if len(response.data) < page_size:
+                        break  # Got less than we asked for, so must be the last page
+                        
+                    current_offset += page_size
+                    self.logger.info(f"Retrieved {len(all_fighters)} fighters so far")
+                
+                if len(all_fighters) == 0:
                     self.logger.warning("No fighters found in the database")
                     return None, None
                     
-                fighters = response.data
+                fighters = all_fighters
                 self.logger.info(f"Retrieved {len(fighters)} fighters for training")
             except Exception as e:
                 self.logger.error(f"Error fetching fighters: {str(e)}")
