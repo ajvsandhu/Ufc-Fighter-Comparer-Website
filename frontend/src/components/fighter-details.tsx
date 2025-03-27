@@ -200,41 +200,51 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
         const data = await response.json();
         console.log("Raw fighter data received:", data);
         
-        // Check for fight history in different possible formats
+        // FIXED: Check specifically for last_5_fights in the response
         let fightHistoryData: FightHistory[] = [];
-        if (Array.isArray(data?.last_5_fights) && data.last_5_fights.length > 0) {
-          console.log("Found last_5_fights in main response");
-          fightHistoryData = data.last_5_fights;
-        } else if (Array.isArray(data?.fights) && data.fights.length > 0) {
-          console.log("Found fights in main response");
-          fightHistoryData = data.fights;
-        } else if (data?.fight_history && Array.isArray(data.fight_history) && data.fight_history.length > 0) {
-          console.log("Found fight_history in main response");
-          fightHistoryData = data.fight_history;
+        
+        // Log all keys in the response for debugging
+        console.log("Response data keys:", Object.keys(data));
+        
+        // Direct access to the last_5_fights field which comes from the fighter_last_5_fights table
+        if (data && data.last_5_fights) {
+          console.log("Found last_5_fights:", data.last_5_fights);
+          fightHistoryData = Array.isArray(data.last_5_fights) ? data.last_5_fights : [data.last_5_fights];
+        } else if (data && data.fight_history) {
+          console.log("Found fight_history:", data.fight_history);
+          fightHistoryData = Array.isArray(data.fight_history) ? data.fight_history : [data.fight_history];
+        } else if (data && data.fights) {
+          console.log("Found fights:", data.fights);
+          fightHistoryData = Array.isArray(data.fights) ? data.fights : [data.fights];
         }
+        
+        console.log("Fight history data before processing:", fightHistoryData);
         
         // Map and sanitize fight history data
         const processedFightHistory = fightHistoryData.map((fight: any) => {
+          // Log each fight for debugging
+          console.log("Processing fight:", fight);
+          
           return {
-            opponent_name: fight?.opponent_name || fight?.opponent || 'Unknown Opponent',
-            opponent_display_name: fight?.opponent_display_name || fight?.opponent || 'Unknown Opponent',
-            result: fight?.result || 'NC',
-            method: fight?.method || 'N/A',
-            round: fight?.round || 0,
-            time: fight?.time || '0:00',
-            event: fight?.event || 'Unknown Event',
-            date: fight?.date || 'Unknown Date',
-            opponent_stats: fight?.opponent_stats || undefined,
-            kd: fight?.kd || '0',
-            sig_str: fight?.sig_str || '0/0',
-            sig_str_pct: fight?.sig_str_pct || '0%',
-            total_str: fight?.total_str || '0/0',
-            head_str: fight?.head_str || '0/0',
-            body_str: fight?.body_str || '0/0',
-            leg_str: fight?.leg_str || '0/0',
-            takedowns: fight?.takedowns || '0/0',
-            td_pct: fight?.td_pct || '0%',
-            ctrl: fight?.ctrl || '0:00',
+            opponent_name: String(fight?.opponent_name || fight?.opponent || 'Unknown Opponent'),
+            opponent_display_name: String(fight?.opponent_display_name || fight?.opponent || 'Unknown Opponent'),
+            result: String(fight?.result || 'NC'),
+            method: String(fight?.method || 'N/A'),
+            round: Number(fight?.round || 0),
+            time: String(fight?.time || '0:00'),
+            event: String(fight?.event || 'Unknown Event'),
+            date: String(fight?.date || 'Unknown Date'),
+            opponent_stats: fight?.opponent_stats,
+            kd: String(fight?.kd || '0'),
+            sig_str: String(fight?.sig_str || '0/0'),
+            sig_str_pct: String(fight?.sig_str_pct || '0%'),
+            total_str: String(fight?.total_str || '0/0'),
+            head_str: String(fight?.head_str || '0/0'),
+            body_str: String(fight?.body_str || '0/0'),
+            leg_str: String(fight?.leg_str || '0/0'),
+            takedowns: String(fight?.takedowns || '0/0'),
+            td_pct: String(fight?.td_pct || '0%'),
+            ctrl: String(fight?.ctrl || '0:00'),
           };
         });
         
@@ -427,6 +437,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
       {fightHistory.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
           <p>No fight history available</p>
+          <p className="text-sm mt-2">If you believe this fighter should have fight data, please check back later.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -494,23 +505,25 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                         <p className="font-medium">{fight.takedowns} ({fight.td_pct})</p>
                       </div>
                     </div>
-                    <div className="mt-4 border-t border-border/50 pt-4">
-                      <h5 className="font-medium mb-2">Strike Distribution</h5>
-                      <div className="grid grid-cols-3 gap-4">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Head</p>
-                          <p className="font-medium">{fight.head_str}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Body</p>
-                          <p className="font-medium">{fight.body_str}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Leg</p>
-                          <p className="font-medium">{fight.leg_str}</p>
+                    {(fight.head_str || fight.body_str || fight.leg_str) && (
+                      <div className="mt-4 border-t border-border/50 pt-4">
+                        <h5 className="font-medium mb-2">Strike Distribution</h5>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-sm text-muted-foreground">Head</p>
+                            <p className="font-medium">{fight.head_str}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Body</p>
+                            <p className="font-medium">{fight.body_str}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Leg</p>
+                            <p className="font-medium">{fight.leg_str}</p>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
                     {fight.ctrl && fight.ctrl !== '0:00' && (
                       <div className="mt-4 border-t border-border/50 pt-4">
                         <p className="text-sm text-muted-foreground">Control Time</p>

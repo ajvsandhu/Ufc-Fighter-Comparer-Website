@@ -214,6 +214,32 @@ def _sanitize_fighter_data(fighter_data):
         if key in fighter_data:
             set_parent_key(key)
             
+    # Handle last_5_fights if present
+    if 'last_5_fights' in fighter_data and fighter_data['last_5_fights']:
+        # Make sure it's a list
+        if not isinstance(fighter_data['last_5_fights'], list):
+            fighter_data['last_5_fights'] = [fighter_data['last_5_fights']]
+        
+        # Sanitize each fight in the list
+        for i, fight in enumerate(fighter_data['last_5_fights']):
+            # Set parent keys for important fight fields
+            for field in ['opponent_name', 'result', 'method', 'round', 'time', 'date', 'event']:
+                if field in fight:
+                    set_parent_key(field)
+            
+            # Convert any None values to appropriate defaults
+            if isinstance(fight, dict):
+                for field in ['opponent_name', 'result', 'method', 'time', 'date', 'event']:
+                    if field not in fight or fight[field] is None:
+                        fight[field] = ""
+                        
+                # Ensure round is a number
+                if 'round' not in fight or fight['round'] is None:
+                    fight['round'] = 0
+            
+        # Log the fights for debugging
+        logger.info(f"Sanitized {len(fighter_data['last_5_fights'])} fights")
+            
     # Apply the enhanced sanitize_json function
     sanitized = sanitize_json(fighter_data)
             
@@ -308,10 +334,36 @@ def get_fighter(fighter_name: str):
             logger.warning(f"Fighter not found with any method: {clean_name}")
             return sanitize_json(_get_default_fighter(clean_name))
         
+        # FIXED: Fetch the last 5 fights for the fighter
+        fighter_id = fighter_data.get('id')
+        last_5_fights = []
+        
+        if fighter_id:
+            try:
+                logger.info(f"Fetching last 5 fights for fighter ID: {fighter_id}")
+                fights_response = supabase.table('fighter_last_5_fights')\
+                    .select('*')\
+                    .eq('fighter_id', fighter_id)\
+                    .order('date', desc=True)\
+                    .limit(MAX_FIGHTS_DISPLAY)\
+                    .execute()
+                
+                if fights_response and hasattr(fights_response, 'data') and fights_response.data:
+                    last_5_fights = fights_response.data
+                    logger.info(f"Found {len(last_5_fights)} fights for fighter ID {fighter_id}")
+                else:
+                    logger.warning(f"No fights found for fighter ID {fighter_id}")
+            except Exception as e:
+                logger.error(f"Error fetching fights for fighter ID {fighter_id}: {str(e)}")
+                # Continue even if we can't get fights
+        
+        # Add the last 5 fights to the fighter data
+        fighter_data['last_5_fights'] = last_5_fights
+        
         # Sanitize all fields to ensure proper string values
         sanitized_data = _sanitize_fighter_data(fighter_data)
         
-        logger.info(f"Successfully retrieved fighter: {clean_name}")
+        logger.info(f"Successfully retrieved fighter: {clean_name} with {len(last_5_fights)} fights")
         return sanitize_json(sanitized_data)
     except Exception as e:
         logger.error(f"Error in get_fighter: {str(e)}")
