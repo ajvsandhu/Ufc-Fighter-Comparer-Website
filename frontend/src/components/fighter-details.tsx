@@ -176,7 +176,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
   const [imageError, setImageError] = React.useState(false)
   const [expandedFight, setExpandedFight] = React.useState<number | null>(null)
 
-  // Fetch fighter data
+  // Fetch fighter data and fight history
   React.useEffect(() => {
     const fetchFighterData = async () => {
       if (!fighterName || fighterName === 'undefined') {
@@ -202,10 +202,15 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
         
         // Check for fight history in different possible formats
         let fightHistoryData: FightHistory[] = [];
-        if (Array.isArray(data?.last_5_fights)) {
+        if (Array.isArray(data?.last_5_fights) && data.last_5_fights.length > 0) {
+          console.log("Found last_5_fights in main response");
           fightHistoryData = data.last_5_fights;
-        } else if (Array.isArray(data?.fights)) {
+        } else if (Array.isArray(data?.fights) && data.fights.length > 0) {
+          console.log("Found fights in main response");
           fightHistoryData = data.fights;
+        } else if (data?.fight_history && Array.isArray(data.fight_history) && data.fight_history.length > 0) {
+          console.log("Found fight_history in main response");
+          fightHistoryData = data.fight_history;
         }
         
         // Map and sanitize fight history data
@@ -219,7 +224,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
             time: fight?.time || '0:00',
             event: fight?.event || 'Unknown Event',
             date: fight?.date || 'Unknown Date',
-            opponent_stats: fight?.opponent_stats || null,
+            opponent_stats: fight?.opponent_stats || undefined,
             kd: fight?.kd || '0',
             sig_str: fight?.sig_str || '0/0',
             sig_str_pct: fight?.sig_str_pct || '0%',
@@ -236,7 +241,6 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
         console.log("Processed fight history:", processedFightHistory);
         
         // Properly map API fields to our expected structure
-        // This handles any field name mismatches between backend and frontend
         const sanitizedData: Record<string, any> = {
           name: data?.fighter_name || data?.name || fighterName || '',
           image_url: data?.image_url || DEFAULT_PLACEHOLDER_IMAGE,
@@ -256,7 +260,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
           sub_avg: data?.['Sub. Avg.'] || data?.sub_avg || DEFAULT_VALUE,
           weight_class: data?.weight_class || '',
           nickname: data?.nickname || '',
-          last_5_fights: Array.isArray(data?.last_5_fights) ? data.last_5_fights : [],
+          last_5_fights: processedFightHistory, // Store the processed fight history
           ranking: data?.ranking || UNRANKED_VALUE,
           tap_link: data?.tap_link || '',
         };
@@ -414,6 +418,117 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
   const getResultColor = (result: string) => {
     return RESULT_COLORS[result.toLowerCase() as FightResult] || RESULT_COLORS.nc
   }
+
+  // Fight history tab content
+  const FightHistoryView = () => (
+    <div className="space-y-8 py-4 animate-in slide-in-from-bottom duration-700">
+      <h4 className="text-xl font-semibold">Last {fightHistory.length} Fights</h4>
+      
+      {fightHistory.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          <p>No fight history available</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {fightHistory.map((fight, index) => (
+            <Card key={`${fight.opponent_name}-${fight.date}-${index}`} className="overflow-hidden">
+              <CardContent className="p-0">
+                <div 
+                  className={`p-4 cursor-pointer hover:bg-accent/10 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                    expandedFight === index ? 'bg-accent/10' : ''
+                  }`}
+                  onClick={() => setExpandedFight(expandedFight === index ? null : index)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-4 h-4 rounded-full ${
+                      fight.result.toLowerCase() === 'win' ? 'bg-green-500' : 
+                      fight.result.toLowerCase() === 'loss' ? 'bg-red-500' : 
+                      'bg-yellow-500'
+                    }`} />
+                    <div>
+                      <p className="font-medium">{fight.opponent_display_name || fight.opponent_name}</p>
+                      <p className="text-sm text-muted-foreground">{fight.date}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <div>
+                      <p className="text-sm">Method</p>
+                      <p className="font-medium">{fight.method}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm">Round</p>
+                      <p className="font-medium">{fight.round}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm">Time</p>
+                      <p className="font-medium">{fight.time}</p>
+                    </div>
+                    <div>
+                      <ChevronDown
+                        className={`h-5 w-5 transition-transform ${
+                          expandedFight === index ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Expanded fight stats */}
+                {expandedFight === index && (
+                  <div className="px-4 py-6 border-t border-border bg-accent/5">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Knockdowns</p>
+                        <p className="font-medium">{fight.kd}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Sig. Strikes</p>
+                        <p className="font-medium">{fight.sig_str} ({fight.sig_str_pct})</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Total Strikes</p>
+                        <p className="font-medium">{fight.total_str}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Takedowns</p>
+                        <p className="font-medium">{fight.takedowns} ({fight.td_pct})</p>
+                      </div>
+                    </div>
+                    <div className="mt-4 border-t border-border/50 pt-4">
+                      <h5 className="font-medium mb-2">Strike Distribution</h5>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Head</p>
+                          <p className="font-medium">{fight.head_str}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Body</p>
+                          <p className="font-medium">{fight.body_str}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Leg</p>
+                          <p className="font-medium">{fight.leg_str}</p>
+                        </div>
+                      </div>
+                    </div>
+                    {fight.ctrl && fight.ctrl !== '0:00' && (
+                      <div className="mt-4 border-t border-border/50 pt-4">
+                        <p className="text-sm text-muted-foreground">Control Time</p>
+                        <p className="font-medium">{fight.ctrl}</p>
+                      </div>
+                    )}
+                    <div className="mt-4 border-t border-border/50 pt-4 text-sm text-muted-foreground">
+                      <p>{fight.event}</p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl animate-in fade-in duration-700">
@@ -819,127 +934,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
             </TabsContent>
 
             <TabsContent value="history" className="animate-in slide-in-from-bottom duration-500">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Last 5 Fights</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-6">
-                    {fightHistory.length > 0 ? (
-                      fightHistory.map((fight, index) => (
-                        <div key={`${fight.opponent_name}-${fight.date}-${index}`} className="border rounded-lg overflow-hidden">
-                          <div 
-                            className="flex items-center justify-between p-4 bg-card hover:bg-accent/50 transition-colors cursor-pointer"
-                            onClick={() => setExpandedFight(expandedFight === index ? null : index)}
-                          >
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <p className="font-semibold text-lg">vs. {fight.opponent_name}</p>
-                                <span className={`px-2 py-0.5 rounded text-sm font-medium ${getResultColor(fight.result)}`}>
-                                  {fight.result.toUpperCase()}
-                                </span>
-                              </div>
-                              <p className="text-sm text-muted-foreground">{fight.event}</p>
-                              <p className="text-sm text-muted-foreground">{fight.date}</p>
-                            </div>
-                            <div className="text-right flex items-center gap-2">
-                              <div>
-                                <p className="font-medium">{fight.method}</p>
-                                {(fight.round || fight.time) && (
-                                  <p className="text-sm text-muted-foreground">
-                                    Round {fight.round} - {fight.time}
-                                  </p>
-                                )}
-                              </div>
-                              {expandedFight === index ? (
-                                <ChevronUp className="h-5 w-5" />
-                              ) : (
-                                <ChevronDown className="h-5 w-5" />
-                              )}
-                            </div>
-                          </div>
-                          
-                          {/* Expanded fight details */}
-                          {expandedFight === index && (
-                            <div className="border-t">
-                              {/* Fight Overview */}
-                              <div className="grid grid-cols-2 gap-4 p-6 bg-accent/5">
-                                <div className="p-4 bg-background rounded-lg text-center shadow-sm hover:shadow-md transition-shadow">
-                                  <p className="text-4xl font-bold text-primary">{fight.kd || '0'}</p>
-                                  <p className="text-sm font-medium text-muted-foreground mt-1">Knockdowns</p>
-                                </div>
-                                <div className="p-4 bg-background rounded-lg text-center shadow-sm hover:shadow-md transition-shadow">
-                                  <p className="text-4xl font-bold text-primary">{fight.ctrl || '0:00'}</p>
-                                  <p className="text-sm font-medium text-muted-foreground mt-1">Control Time</p>
-                                </div>
-                              </div>
-
-                              {/* Stats Grid */}
-                              <div className="p-6 space-y-8">
-                                {/* Total and Significant Strikes */}
-                                <div className="grid grid-cols-2 gap-6">
-                                  {/* Total Strikes */}
-                                  <div className="p-4 bg-accent/5 rounded-lg">
-                                    <h4 className="text-sm font-medium text-muted-foreground mb-3">Total Strikes</h4>
-                                    <p className="text-3xl font-bold">{fight.total_str}</p>
-                                  </div>
-
-                                  {/* Significant Strikes */}
-                                  <div className="p-4 bg-accent/5 rounded-lg">
-                                    <h4 className="text-sm font-medium text-muted-foreground mb-3">Significant Strikes</h4>
-                                    <div className="space-y-1">
-                                      <p className="text-3xl font-bold">{fight.sig_str}</p>
-                                      <p className="text-sm font-medium text-primary">{fight.sig_str_pct}</p>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Strike Distribution */}
-                                <div className="bg-accent/5 rounded-lg p-4">
-                                  <h4 className="text-sm font-medium text-muted-foreground mb-4">Strike Distribution</h4>
-                                  <div className="grid grid-cols-3 gap-6">
-                                    <div className="text-center p-3 bg-background rounded-lg shadow-sm">
-                                      <h4 className="text-xs font-medium text-muted-foreground mb-2">Head</h4>
-                                      <p className="text-2xl font-bold">{fight.head_str}</p>
-                                    </div>
-                                    <div className="text-center p-3 bg-background rounded-lg shadow-sm">
-                                      <h4 className="text-xs font-medium text-muted-foreground mb-2">Body</h4>
-                                      <p className="text-2xl font-bold">{fight.body_str}</p>
-                                    </div>
-                                    <div className="text-center p-3 bg-background rounded-lg shadow-sm">
-                                      <h4 className="text-xs font-medium text-muted-foreground mb-2">Leg</h4>
-                                      <p className="text-2xl font-bold">{fight.leg_str}</p>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Takedowns */}
-                                <div className="bg-accent/5 rounded-lg p-4">
-                                  <h4 className="text-sm font-medium text-muted-foreground mb-3">Takedowns</h4>
-                                  <div className="grid grid-cols-2 gap-6">
-                                    <div className="p-3 bg-background rounded-lg shadow-sm text-center">
-                                      <p className="text-2xl font-bold">{fight.takedowns}</p>
-                                      <p className="text-xs font-medium text-muted-foreground mt-1">Attempts</p>
-                                    </div>
-                                    <div className="p-3 bg-background rounded-lg shadow-sm text-center">
-                                      <p className="text-2xl font-bold">{fight.td_pct}</p>
-                                      <p className="text-xs font-medium text-muted-foreground mt-1">Success Rate</p>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-center text-muted-foreground">
-                        No fight history available
-                      </p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+              <FightHistoryView />
             </TabsContent>
           </Tabs>
         </div>
