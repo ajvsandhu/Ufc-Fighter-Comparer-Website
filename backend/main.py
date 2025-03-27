@@ -1,12 +1,22 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import uvicorn
 import os
 from contextlib import asynccontextmanager
 import logging
 import traceback
 
-from backend.constants import APP_TITLE, APP_DESCRIPTION, APP_VERSION, API_V1_STR
+from backend.constants import (
+    APP_TITLE, 
+    APP_DESCRIPTION, 
+    APP_VERSION, 
+    API_V1_STR,
+    CORS_ORIGINS,
+    CORS_METHODS,
+    CORS_HEADERS,
+    CORS_CREDENTIALS
+)
 from backend.api.routes import fighters, predictions
 from backend.api.database import get_db_connection, check_database_connection
 from backend.ml.model_loader import load_model, get_loaded_model
@@ -61,13 +71,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware - allow all origins for now
+# Add CORS middleware with configured origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for now
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=CORS_ORIGINS,  # Use configured origins from constants
+    allow_credentials=CORS_CREDENTIALS,
+    allow_methods=CORS_METHODS,
+    allow_headers=CORS_HEADERS,
 )
 
 # Include routers
@@ -89,6 +99,26 @@ def health_check():
         "model_loaded": bool(model),
         "database_connected": db_connected
     }
+
+# Add exception handlers for better error responses
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle all unhandled exceptions and return a consistent error response."""
+    logger.error(f"Unhandled exception: {str(exc)}")
+    logger.error(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"}
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Handler for HTTP exceptions to ensure consistent logging."""
+    logger.warning(f"HTTP exception: {exc.status_code} - {exc.detail}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail}
+    )
 
 # Run the API with uvicorn
 if __name__ == "__main__":

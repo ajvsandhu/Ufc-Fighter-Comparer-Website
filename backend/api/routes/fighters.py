@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Query, HTTPException
-import sqlite3
 from backend.api.database import get_db_connection
 import re
 from typing import List, Dict
@@ -149,6 +148,58 @@ def get_fighter_stats(fighter_name: str):
         logger.error(f"Error fetching fighter stats: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
+# Add the new endpoint to match what frontend is calling
+@router.get("/fighter/{fighter_name}")
+def get_fighter(fighter_name: str):
+    """Get fighter by name - alias for frontend compatibility."""
+    try:
+        # URL decode the fighter name
+        fighter_name = unquote(fighter_name)
+        
+        # Log the requested fighter name to help with debugging
+        logger.info(f"Fighter lookup requested for: {fighter_name}")
+        
+        supabase = get_db_connection()
+        if not supabase:
+            logger.error("No database connection available")
+            raise HTTPException(status_code=500, detail="Database connection error")
+        
+        # Clean fighter name - remove record if present
+        clean_name = fighter_name
+        if "(" in fighter_name:
+            clean_name = fighter_name.split("(")[0].strip()
+            logger.info(f"Extracted clean name: {clean_name}")
+        
+        # Fetch fighter stats from Supabase
+        response = supabase.table('fighters')\
+            .select('*')\
+            .eq('fighter_name', clean_name)\
+            .execute()
+        
+        if not response.data:
+            logger.warning(f"Fighter not found: {clean_name}")
+            
+            # If direct match fails, try a partial match
+            response = supabase.table('fighters')\
+                .select('*')\
+                .ilike('fighter_name', f'%{clean_name}%')\
+                .limit(1)\
+                .execute()
+                
+            if not response.data:
+                logger.warning(f"Fighter not found with partial match either: {clean_name}")
+                raise HTTPException(status_code=404, detail=f"Fighter not found: {clean_name}")
+        
+        # Return first matching fighter
+        fighter_data = response.data[0]
+        logger.info(f"Successfully retrieved fighter: {clean_name}")
+        return fighter_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in get_fighter: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
 @router.get("/fighter-details/{fighter_name}")
 def get_fighter_details(fighter_name: str):
     """Get detailed fighter information by name."""
@@ -251,54 +302,41 @@ def process_fighter_name(raw_name: str) -> str:
 @router.post("/scrape_and_store_fighters")
 def scrape_and_store_fighters(fighters: List[Dict]):
     """
-    Example route to show how you'd store fighters so that the DB ends up
-    with the nickname if there's a first+last name, or no nickname if
-    there's only one name.
-    In your real code, adapt this insertion logic to wherever your
-    actual scraper populates the DB.
+    Endpoint to store fighters in the Supabase database.
+    
+    This endpoint processes fighter names and stores them in the database.
     """
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    for f in fighters:
-        # Suppose each 'f' is a dict like:
-        # {"fighter_name": "Israel 'The Last Stylebender' Adesanya", "image_url": "...", etc.}
-        processed_name = process_fighter_name(f["fighter_name"])
-        # Insert into the DB with the processed name
-        try:
-            cur.execute(
-                """
-                INSERT INTO fighters (fighter_name, image_url, Record, Height, Weight, Reach,
-                                      STANCE, DOB, SLpM, [Str. Acc.], SApM, [Str. Def],
-                                      [TD Avg.], [TD Acc.], [TD Def.], [Sub. Avg.], fighter_url, tap_link)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    processed_name,
-                    f.get("image_url", ""),
-                    f.get("Record", ""),
-                    f.get("Height", ""),
-                    f.get("Weight", ""),
-                    f.get("Reach", ""),
-                    f.get("STANCE", ""),
-                    f.get("DOB", ""),
-                    f.get("SLpM", ""),
-                    f.get("Str. Acc.", ""),
-                    f.get("SApM", ""),
-                    f.get("Str. Def", ""),
-                    f.get("TD Avg.", ""),
-                    f.get("TD Acc.", ""),
-                    f.get("TD Def.", ""),
-                    f.get("Sub. Avg.", ""),
-                    f.get("fighter_url", ""),
-                    f.get("tap_link", "")  # Add tap_link to insertion
-                )
-            )
-        except sqlite3.Error as e:
-            logger.error(f"Database insertion error: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to insert fighter: {str(e)}")
-
-    conn.commit()
-    conn.close()
-    return {"detail": "Fighters inserted successfully, with correct nickname handling."}
+    try:
+        supabase = get_db_connection()
+        if not supabase:
+            logger.error("No database connection available")
+            raise HTTPException(status_code=500, detail="Database connection error")
+            
+        success_count = 0
+        error_count = 0
+        
+        for fighter in fighters:
+            # Process the fighter name if needed
+            if "fighter_name" in fighter:
+                fighter["fighter_name"] = process_fighter_name(fighter["fighter_name"])
+                
+            try:
+                # Upsert the fighter data to the database
+                response = supabase.table("fighters").upsert(fighter, on_conflict="fighter_name").execute()
+                if response and hasattr(response, 'data') and response.data:
+                    success_count += 1
+                else:
+                    error_count += 1
+                    logger.warning(f"Failed to insert fighter: {fighter.get('fighter_name', 'Unknown')}")
+            except Exception as e:
+                error_count += 1
+                logger.error(f"Error inserting fighter {fighter.get('fighter_name', 'Unknown')}: {str(e)}")
+        
+        return {
+            "status": "success",
+            "detail": f"Processed {len(fighters)} fighters. {success_count} succeeded, {error_count} failed."
+        }
+    except Exception as e:
+        logger.error(f"Error in scrape_and_store_fighters: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
