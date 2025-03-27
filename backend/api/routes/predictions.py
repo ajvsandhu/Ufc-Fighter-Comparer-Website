@@ -22,6 +22,7 @@ from urllib.parse import unquote
 from pydantic import BaseModel
 from backend.ml.model_loader import get_loaded_model, get_loaded_scaler, get_loaded_features, load_model
 from backend.ml.predictor_simple import predict_winner  # Using our simpler implementation
+from backend.main import sanitize_json  # Import sanitize_json function
 
 # Set up logging
 logging.basicConfig(
@@ -40,6 +41,10 @@ class FighterInput(BaseModel):
     fighter1_name: str
     fighter2_name: str
 
+class FighterMatchup(BaseModel):
+    fighter1: str
+    fighter2: str
+
 class ModelInfoResponse(BaseModel):
     model_loaded: bool
     model_type: Optional[str] = None
@@ -52,9 +57,9 @@ async def train_model():
     try:
         success = predictor.train(force=True)
         if success:
-            return {"status": "success", "message": "Model trained successfully"}
+            return sanitize_json({"status": "success", "message": "Model trained successfully"})
         else:
-            return {"status": "error", "message": "Failed to train model, see server logs for details"}
+            return sanitize_json({"status": "error", "message": "Failed to train model, see server logs for details"})
     except Exception as e:
         logger.error(f"Error training model: {str(e)}")
         logger.error(traceback.format_exc())
@@ -66,9 +71,9 @@ async def update_rankings():
     try:
         success = fetch_and_update_rankings()
         if success:
-            return {"status": "success", "message": "Fighter rankings updated successfully"}
+            return sanitize_json({"status": "success", "message": "Fighter rankings updated successfully"})
         else:
-            return {"status": "error", "message": "Failed to update fighter rankings, see server logs for details"}
+            return sanitize_json({"status": "error", "message": "Failed to update fighter rankings, see server logs for details"})
     except Exception as e:
         logger.error(f"Error updating rankings: {str(e)}")
         logger.error(traceback.format_exc())
@@ -80,7 +85,7 @@ async def update_model_config(request: Request):
     try:
         config_data = await request.json()
         updated_config = update_config(config_data)
-        return {"status": "success", "config": updated_config}
+        return sanitize_json({"status": "success", "config": updated_config})
     except Exception as e:
         logger.error(f"Error updating config: {str(e)}")
         logger.error(traceback.format_exc())
@@ -90,7 +95,7 @@ async def update_model_config(request: Request):
 async def get_model_config():
     """Get the current model configuration settings"""
     try:
-        return {"status": "success", "config": get_config()}
+        return sanitize_json({"status": "success", "config": get_config()})
     except Exception as e:
         logger.error(f"Error getting config: {str(e)}")
         logger.error(traceback.format_exc())
@@ -101,7 +106,7 @@ async def reset_model_config():
     """Reset the model configuration to default values"""
     try:
         reset_config()
-        return {"status": "success", "message": "Configuration reset to defaults", "config": get_config()}
+        return sanitize_json({"status": "success", "message": "Configuration reset to defaults", "config": get_config()})
     except Exception as e:
         logger.error(f"Error resetting config: {str(e)}")
         logger.error(traceback.format_exc())
@@ -115,10 +120,10 @@ async def retrain_model():
         success = predictor.train(force=True)
         if success:
             logger.info("Model retrained successfully")
-            return {"status": "success", "message": "Model retrained successfully"}
+            return sanitize_json({"status": "success", "message": "Model retrained successfully"})
         else:
             logger.error("Failed to train model")
-            return {"status": "error", "message": "Failed to train model"}
+            return sanitize_json({"status": "error", "message": "Failed to train model"})
     except Exception as e:
         logger.error(f"Error training model: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -281,7 +286,7 @@ def predict_fight(fighters: FighterMatchup):
             response['head_to_head']['last_round'] = _ensure_string(response['head_to_head'].get('last_round', ''))
             response['head_to_head']['last_time'] = _ensure_string(response['head_to_head'].get('last_time', ''))
             
-        return response
+        return sanitize_json(response)
     except HTTPException:
         raise
     except Exception as e:
@@ -297,7 +302,7 @@ async def get_model_info():
         features = get_loaded_features()
         
         if not model:
-            return ModelInfoResponse(model_loaded=False)
+            return sanitize_json(ModelInfoResponse(model_loaded=False).dict())
         
         # Get model type
         model_type = type(model).__name__
@@ -316,16 +321,18 @@ async def get_model_info():
             feature_importances.sort(key=lambda x: x[1], reverse=True)
             important_features = [f[0] for f in feature_importances[:10]]
         
-        return ModelInfoResponse(
-            model_loaded=True,
-            model_type=model_type,
-            feature_count=feature_count,
-            important_features=important_features
+        return sanitize_json(
+            ModelInfoResponse(
+                model_loaded=True,
+                model_type=model_type,
+                feature_count=feature_count,
+                important_features=important_features
+            ).dict()
         )
     
     except Exception as e:
         logger.error(f"Error getting model info: {str(e)}")
-        return ModelInfoResponse(model_loaded=False)
+        return sanitize_json(ModelInfoResponse(model_loaded=False).dict())
 
 @router.post("/retrain")
 async def retrain_model(background_tasks: BackgroundTasks):
@@ -342,7 +349,7 @@ async def retrain_model(background_tasks: BackgroundTasks):
         
         background_tasks.add_task(train_model)
         
-        return {"message": "Model retraining scheduled"}
+        return sanitize_json({"message": "Model retraining scheduled"})
     
     except Exception as e:
         logger.error(f"Error scheduling model retraining: {str(e)}")
@@ -352,8 +359,8 @@ async def retrain_model(background_tasks: BackgroundTasks):
 @router.get("/status")
 async def model_status():
     """Get the status of the prediction model"""
-    return {
+    return sanitize_json({
         "model_loaded": predictor.model is not None,
         "model_path": MODEL_PATH if predictor.model else None,
         "config": get_config()
-    } 
+    }) 

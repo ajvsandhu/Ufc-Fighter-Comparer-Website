@@ -12,6 +12,7 @@ from backend.constants import (
     UNRANKED_VALUE
 )
 import traceback
+from backend.main import sanitize_json  # Import the sanitization function
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ def get_fighters(query: str = Query("", min_length=0)):
                     .execute()
             
             if not response.data:
-                return {"fighters": []}
+                return sanitize_json({"fighters": []})
             
             fighter_data = response.data
             logger.info(f"Found {len(fighter_data)} fighters matching query: {query}")
@@ -123,7 +124,7 @@ def get_fighters(query: str = Query("", min_length=0)):
         
         # Return result in expected format
         logger.info(f"Returning {len(fighters_list)} fighters")
-        return {"fighters": fighters_list[:MAX_SEARCH_RESULTS]}
+        return sanitize_json({"fighters": fighters_list[:MAX_SEARCH_RESULTS]})
     except Exception as e:
         logger.error(f"Unexpected error in get_fighters: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
@@ -154,7 +155,7 @@ def get_fighter_stats(fighter_name: str):
         # Return first matching fighter
         fighter_data = response.data[0]
         logger.info(f"Retrieved stats for fighter: {fighter_name}")
-        return fighter_data
+        return sanitize_json(fighter_data)
     except HTTPException:
         raise
     except Exception as e:
@@ -272,7 +273,7 @@ def get_fighter(fighter_name: str):
         sanitized_data = _sanitize_fighter_data(fighter_data)
         
         logger.info(f"Successfully retrieved fighter: {clean_name}")
-        return sanitized_data
+        return sanitize_json(sanitized_data)
     except HTTPException:
         raise
     except Exception as e:
@@ -287,7 +288,7 @@ def get_fighter_details(fighter_name: str):
         # Use the same logic as get_fighter_stats but with more detailed logging
         fighter_data = get_fighter_stats(fighter_name)
         logger.info(f"Retrieved detailed information for fighter: {fighter_name}")
-        return fighter_data
+        return sanitize_json(fighter_data)
     except HTTPException:
         raise
     except Exception as e:
@@ -344,7 +345,7 @@ def get_fighter_average_stats():
                 averages[field] = 0
         
         logger.info("Calculated average stats across all fighters")
-        return averages
+        return sanitize_json(averages)
     except HTTPException:
         raise
     except Exception as e:
@@ -412,10 +413,10 @@ def scrape_and_store_fighters(fighters: List[Dict]):
                 error_count += 1
                 logger.error(f"Error inserting fighter {fighter.get('fighter_name', 'Unknown')}: {str(e)}")
         
-        return {
+        return sanitize_json({
             "status": "success",
             "detail": f"Processed {len(fighters)} fighters. {success_count} succeeded, {error_count} failed."
-        }
+        })
     except Exception as e:
         logger.error(f"Error in scrape_and_store_fighters: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")

@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.middleware.base import BaseHTTPMiddleware
 import uvicorn
 import os
 from contextlib import asynccontextmanager
@@ -35,61 +34,34 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Custom middleware to sanitize response JSON
-class SanitizeJSONMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        # Process the request (normal flow)
-        response = await call_next(request)
+# Helper function to sanitize JSON values (replaces middleware)
+def sanitize_json(obj):
+    """Recursively sanitize JSON values to prevent client-side errors."""
+    # Prevent module loading issues by using a module-level flag
+    if hasattr(sanitize_json, '_is_sanitizing'):
+        # If we're already sanitizing, return as-is to prevent recursion
+        return obj
         
-        # Only process JSON responses
-        if response.headers.get("content-type") == "application/json":
-            try:
-                # Read the response body
-                body = [chunk async for chunk in response.body_iterator]
-                
-                # Recreate the response with the sanitized JSON
-                if body:
-                    json_body = json.loads(b"".join(body))
-                    
-                    # Function to recursively sanitize JSON values
-                    def sanitize_json(obj):
-                        if isinstance(obj, dict):
-                            # Clean dictionary values
-                            return {k: sanitize_json(v) for k, v in obj.items()}
-                        elif isinstance(obj, list):
-                            # Clean list items
-                            return [sanitize_json(item) for item in obj]
-                        elif obj is None:
-                            # Convert None to empty string for string context
-                            return ""
-                        else:
-                            # Keep other values as-is
-                            return obj
-                    
-                    # Sanitize the data
-                    sanitized_data = sanitize_json(json_body)
-                    
-                    # Create a new JSON response with sanitized data
-                    return JSONResponse(
-                        content=sanitized_data,
-                        status_code=response.status_code,
-                        headers=dict(response.headers)
-                    )
-            except Exception as e:
-                # Log error but continue with original response
-                logger.error(f"Error in SanitizeJSONMiddleware: {str(e)}")
-                logger.error(traceback.format_exc())
-                
-                # We need to return a new response with the original body
-                # since we've consumed the body_iterator
-                return Response(
-                    content=b"".join(body) if 'body' in locals() else b"",
-                    status_code=response.status_code,
-                    headers=dict(response.headers),
-                    media_type=response.media_type
-                )
+    try:
+        # Set the flag to prevent circular imports during sanitization
+        sanitize_json._is_sanitizing = True
         
-        return response
+        if isinstance(obj, dict):
+            # Clean dictionary values
+            return {k: sanitize_json(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            # Clean list items
+            return [sanitize_json(item) for item in obj]
+        elif obj is None:
+            # Convert None to empty string for string context
+            return ""
+        else:
+            # Keep other values as-is
+            return obj
+    finally:
+        # Always clear the flag when done
+        if hasattr(sanitize_json, '_is_sanitizing'):
+            delattr(sanitize_json, '_is_sanitizing')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -166,12 +138,10 @@ logger.info(f"CORS configured with origins: {CORS_ORIGINS}")
 app.include_router(fighters.router)
 app.include_router(predictions.router)
 
-# Add the sanitize JSON middleware
-app.add_middleware(SanitizeJSONMiddleware)
-
 @app.get("/")
 def read_root():
-    return {"message": "UFC Fighter Prediction API is running!"}
+    response_data = {"message": "UFC Fighter Prediction API is running!"}
+    return sanitize_json(response_data)
 
 @app.get("/health")
 def health_check():
@@ -179,11 +149,12 @@ def health_check():
     model = get_loaded_model()
     db_connected = check_database_connection()
     
-    return {
+    response_data = {
         "status": "healthy" if model and db_connected else "degraded",
         "model_loaded": bool(model),
         "database_connected": db_connected
     }
+    return sanitize_json(response_data)
 
 # Add exception handlers for better error responses
 @app.exception_handler(Exception)
@@ -196,14 +167,19 @@ async def general_exception_handler(request: Request, exc: Exception):
     path = request.url.path
     method = request.method
     
+    response_data = {
+        "detail": f"Internal server error: {str(exc)}",
+        "path": path,
+        "method": method,
+        "type": type(exc).__name__
+    }
+    
+    # Sanitize the response data
+    sanitized_data = sanitize_json(response_data)
+    
     return JSONResponse(
         status_code=500,
-        content={
-            "detail": f"Internal server error: {str(exc)}",
-            "path": path,
-            "method": method,
-            "type": type(exc).__name__
-        }
+        content=sanitized_data
     )
 
 @app.exception_handler(HTTPException)
@@ -215,13 +191,18 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     path = request.url.path
     method = request.method
     
+    response_data = {
+        "detail": exc.detail,
+        "path": path,
+        "method": method
+    }
+    
+    # Sanitize the response data
+    sanitized_data = sanitize_json(response_data)
+    
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "detail": exc.detail,
-            "path": path,
-            "method": method
-        }
+        content=sanitized_data
     )
 
 # Run the API with uvicorn
