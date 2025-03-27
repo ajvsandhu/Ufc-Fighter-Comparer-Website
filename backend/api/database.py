@@ -45,13 +45,19 @@ class DatabaseConnection:
 def get_db_connection():
     """Get a cached Supabase client instance."""
     try:
-        supabase_url = os.getenv("SUPABASE_URL", "https://jjfaidtdhuxmekdznwor.supabase.co/")
-        supabase_key = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqZmFpZHRkaHV4bWVrZHpud29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTA5NzU5NjAsImV4cCI6MjAyNjU1MTk2MH0.Dq7bLqyXDe2j49YXJ4GYV1lMHBsW0NLDv3puqDIWKYg")
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
         
-        return create_client(supabase_url, supabase_key)
+        if not supabase_url or not supabase_key:
+            logger.error("Supabase credentials not found in environment variables")
+            return None
+            
+        client = create_client(supabase_url, supabase_key)
+        logger.info("Supabase connection initialized successfully")
+        return client
     except Exception as e:
-        print(f"Error creating Supabase client: {str(e)}")
+        logger.error(f"Error creating Supabase client: {str(e)}")
         return None
 
-# Alias for get_db_connection to maintain compatibility with scrapers
+# Alias for get_db_connection to maintain compatibility
 get_supabase_client = get_db_connection

@@ -96,12 +96,18 @@ async def reset_model_config():
 
 @router.get("/retrain")
 async def retrain_model():
-    """Force retrain the model with current numpy version"""
+    """Force retrain the model with current scikit-learn version"""
     try:
-        predictor.train(force=True)
-        return {"message": "Model retrained successfully"}
+        logger.info("Starting model retraining...")
+        success = predictor.train(force=True)
+        if success:
+            logger.info("Model retrained successfully")
+            return {"status": "success", "message": "Model retrained successfully"}
+        else:
+            logger.error("Failed to train model")
+            return {"status": "error", "message": "Failed to train model"}
     except Exception as e:
-        logger.error(f"Error retraining model: {str(e)}")
+        logger.error(f"Error training model: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 def format_fighter_data(fighter_data: Dict, last_5_fights: List) -> Dict[str, Any]:
