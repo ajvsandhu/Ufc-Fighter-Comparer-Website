@@ -1,11 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.middleware.base import BaseHTTPMiddleware
 import uvicorn
 import os
 from contextlib import asynccontextmanager
 import logging
 import traceback
+import json
+import time
 
 from backend.constants import (
     APP_TITLE, 
@@ -32,31 +35,107 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+# Custom middleware to sanitize response JSON
+class SanitizeJSONMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Process the request (normal flow)
+        response = await call_next(request)
+        
+        # Only process JSON responses
+        if response.headers.get("content-type") == "application/json":
+            try:
+                # Read the response body
+                body = [chunk async for chunk in response.body_iterator]
+                
+                # Recreate the response with the sanitized JSON
+                if body:
+                    json_body = json.loads(b"".join(body))
+                    
+                    # Function to recursively sanitize JSON values
+                    def sanitize_json(obj):
+                        if isinstance(obj, dict):
+                            # Clean dictionary values
+                            return {k: sanitize_json(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            # Clean list items
+                            return [sanitize_json(item) for item in obj]
+                        elif obj is None:
+                            # Convert None to empty string for string context
+                            return ""
+                        else:
+                            # Keep other values as-is
+                            return obj
+                    
+                    # Sanitize the data
+                    sanitized_data = sanitize_json(json_body)
+                    
+                    # Create a new JSON response with sanitized data
+                    return JSONResponse(
+                        content=sanitized_data,
+                        status_code=response.status_code,
+                        headers=dict(response.headers)
+                    )
+            except Exception as e:
+                # Log error but continue with original response
+                logger.error(f"Error in SanitizeJSONMiddleware: {str(e)}")
+                logger.error(traceback.format_exc())
+                
+                # We need to return a new response with the original body
+                # since we've consumed the body_iterator
+                return Response(
+                    content=b"".join(body) if 'body' in locals() else b"",
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    media_type=response.media_type
+                )
+        
+        return response
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Load model on startup
+    # Load model on startup with multiple attempts
+    model_loaded = False
     try:
-        logger.info("Loading model on application startup...")
-        load_model()
-        model = get_loaded_model()
-        if model:
-            logger.info("Model loaded successfully!")
-        else:
-            logger.warning("Model loading failed or no model was loaded!")
+        for attempt in range(3):  # Try up to 3 times
+            logger.info(f"Loading model attempt {attempt+1}/3...")
+            if load_model():
+                model = get_loaded_model()
+                if model:
+                    logger.info("Model loaded successfully!")
+                    model_loaded = True
+                    break
+                else:
+                    logger.warning("Model loading returned True but no model was loaded. Retrying...")
+            else:
+                logger.warning("Model loading failed. Retrying...")
+        
+        if not model_loaded:
+            logger.error("All model loading attempts failed.")
     except Exception as e:
-        logger.error(f"Error loading model on startup: {str(e)}")
+        logger.error(f"Unexpected error loading model on startup: {str(e)}")
         logger.error(traceback.format_exc())
     
-    # Check database connection on startup
+    # Check database connection on startup with retry
+    db_connected = False
     try:
-        db_connected = check_database_connection()
-        if db_connected:
-            logger.info("Database connection successful!")
-        else:
-            logger.warning("Database connection check failed!")
+        for attempt in range(3):  # Try up to 3 times
+            logger.info(f"Checking database connection attempt {attempt+1}/3...")
+            if check_database_connection():
+                logger.info("Database connection successful!")
+                db_connected = True
+                break
+            else:
+                logger.warning("Database connection check failed. Retrying...")
+                time.sleep(2)  # Wait a bit before retrying
+        
+        if not db_connected:
+            logger.error("All database connection attempts failed.")
     except Exception as e:
         logger.error(f"Error checking database connection: {str(e)}")
         logger.error(traceback.format_exc())
+    
+    # Log startup status
+    logger.info(f"Application startup complete. Model loaded: {model_loaded}, Database connected: {db_connected}")
     
     yield
     
@@ -86,6 +165,9 @@ logger.info(f"CORS configured with origins: {CORS_ORIGINS}")
 # Include routers
 app.include_router(fighters.router)
 app.include_router(predictions.router)
+
+# Add the sanitize JSON middleware
+app.add_middleware(SanitizeJSONMiddleware)
 
 @app.get("/")
 def read_root():

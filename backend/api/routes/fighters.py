@@ -68,9 +68,15 @@ def get_fighters(query: str = Query("", min_length=0)):
         if not query:
             # Return all fighters with record and ranking info
             for fighter in fighter_data:
-                fighter_name = fighter.get('fighter_name')
-                record = fighter.get('Record') if fighter.get('Record') else DEFAULT_RECORD
+                fighter_name = fighter.get('fighter_name', '')
+                if fighter_name is None:
+                    fighter_name = ''  # Ensure fighter_name is never None
                 
+                record = fighter.get('Record', DEFAULT_RECORD) 
+                if record is None:
+                    record = DEFAULT_RECORD  # Ensure record is never None
+                
+                # Always return as a valid string
                 formatted_name = f"{fighter_name} ({record})"
                 fighters_list.append(formatted_name)
         else:
@@ -78,8 +84,14 @@ def get_fighters(query: str = Query("", min_length=0)):
             query_parts = query.lower().split()
             
             for fighter in fighter_data:
-                fighter_name = fighter.get('fighter_name')
-                record = fighter.get('Record') if fighter.get('Record') else DEFAULT_RECORD
+                fighter_name = fighter.get('fighter_name', '')
+                if fighter_name is None:
+                    fighter_name = ''  # Ensure fighter_name is never None
+                
+                record = fighter.get('Record', DEFAULT_RECORD)
+                if record is None:
+                    record = DEFAULT_RECORD  # Ensure record is never None
+                
                 ranking = fighter.get('ranking')
                 
                 # Split fighter name into parts for matching
@@ -149,7 +161,51 @@ def get_fighter_stats(fighter_name: str):
         logger.error(f"Error fetching fighter stats: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-# Add the new endpoint to match what frontend is calling
+def _sanitize_string(value, default=""):
+    """Ensure a value is a valid string to prevent frontend errors."""
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        try:
+            return str(value)
+        except:
+            return default
+    return value
+
+def _sanitize_fighter_data(fighter_data):
+    """Sanitize all string fields in fighter data to prevent frontend errors."""
+    if not fighter_data:
+        return {}
+        
+    sanitized = {}
+    # Copy the data and sanitize all string fields
+    for key, value in fighter_data.items():
+        if key in ['fighter_name', 'Record', 'Height', 'Weight', 'Reach', 'STANCE', 'DOB', 'image_url']:
+            sanitized[key] = _sanitize_string(value, "")
+        else:
+            # For non-string fields, just copy the value but ensure it's not None
+            sanitized[key] = 0 if value is None and isinstance(value, (int, float)) else value
+            
+    # Ensure critical fields exist with defaults
+    if 'fighter_name' not in sanitized or not sanitized['fighter_name']:
+        sanitized['fighter_name'] = ""
+    if 'Record' not in sanitized or not sanitized['Record']:
+        sanitized['Record'] = "0-0-0"
+    if 'Height' not in sanitized:
+        sanitized['Height'] = ""
+    if 'Weight' not in sanitized:
+        sanitized['Weight'] = ""
+    if 'Reach' not in sanitized:
+        sanitized['Reach'] = ""
+    if 'STANCE' not in sanitized:
+        sanitized['STANCE'] = ""
+    if 'DOB' not in sanitized:
+        sanitized['DOB'] = ""
+    if 'image_url' not in sanitized:
+        sanitized['image_url'] = ""
+        
+    return sanitized
+
 @router.get("/fighter/{fighter_name}")
 def get_fighter(fighter_name: str):
     """Get fighter by name - alias for frontend compatibility."""
@@ -212,35 +268,11 @@ def get_fighter(fighter_name: str):
             logger.warning(f"Fighter not found with any method: {clean_name}")
             raise HTTPException(status_code=404, detail=f"Fighter not found: {clean_name}")
         
-        # Ensure all expected fields have values to prevent client-side errors
-        default_fighter = {
-            "fighter_name": clean_name,
-            "Record": "0-0-0",
-            "Height": "",
-            "Weight": "",
-            "Reach": "",
-            "STANCE": "",
-            "DOB": "",
-            "SLpM": 0,
-            "Str. Acc.": 0,
-            "SApM": 0,
-            "Str. Def": 0,
-            "TD Avg.": 0,
-            "TD Acc.": 0,
-            "TD Def.": 0,
-            "Sub. Avg.": 0,
-            "image_url": "",
-            "ranking": 0,
-            "is_champion": False
-        }
-        
-        # Apply defaults for any missing fields
-        for key, default_value in default_fighter.items():
-            if key not in fighter_data or fighter_data[key] is None:
-                fighter_data[key] = default_value
+        # Sanitize all fields to ensure they are properly formatted strings
+        sanitized_data = _sanitize_fighter_data(fighter_data)
         
         logger.info(f"Successfully retrieved fighter: {clean_name}")
-        return fighter_data
+        return sanitized_data
     except HTTPException:
         raise
     except Exception as e:
