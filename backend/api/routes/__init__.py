@@ -1,3 +1,4 @@
-from backend.api.routes import fighters, predictions
+# API routes package
+# All route modules will be imported when accessing this package
 
-__all__ = ["fighters", "predictions"]
+# This empty __init__.py file marks this directory as a Python package

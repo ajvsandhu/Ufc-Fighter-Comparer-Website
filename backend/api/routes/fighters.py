@@ -12,7 +12,7 @@ from backend.constants import (
     UNRANKED_VALUE
 )
 import traceback
-from backend.main import sanitize_json  # Import the sanitization function
+from backend.utils import sanitize_json  # Import from utils instead of main
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

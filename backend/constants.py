@@ -11,8 +11,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Base Directories
-BASE_DIR = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DATA_DIR = Path(os.getenv('DATA_DIR', BASE_DIR / "data"))
+BASE_DIR = Path(__file__).resolve().parent.parent  # Gets the backend directory parent
+DATA_DIR = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CONFIG_DIR = DATA_DIR / "config"
 MODELS_DIR = Path(os.getenv('MODEL_DIR', DATA_DIR / "models"))
 
@@ -25,7 +25,7 @@ DB_PATH = Path(os.getenv('DB_PATH', DATA_DIR / DB_NAME))
 
 # API Configuration
 APP_TITLE = "UFC Fighter Prediction API"
-APP_DESCRIPTION = "API for UFC fighter statistics and fight outcome predictions"
+APP_DESCRIPTION = "API for UFC Fighter statistics and fight predictions"
 APP_VERSION = "1.0.0"
 API_V1_STR = "/api/v1"
 
@@ -42,12 +42,12 @@ CORS_HEADERS = ["*"]
 CORS_CREDENTIALS = True
 
 # Query Limits and Pagination
-MAX_FIGHTS_DISPLAY = int(os.getenv('MAX_FIGHTS_DISPLAY', 5))
-MAX_SEARCH_RESULTS = int(os.getenv('MAX_SEARCH_RESULTS', 5))
+MAX_FIGHTS_DISPLAY = 5
+MAX_SEARCH_RESULTS = 100
 PAGINATION_PAGE_SIZE = int(os.getenv('PAGINATION_PAGE_SIZE', 20))
 
 # Fighter Constants
-UNRANKED_VALUE = 99
+UNRANKED_VALUE = 0
 DEFAULT_RECORD = "0-0-0"
 DEFAULT_CONFIDENCE = 0.5
 
@@ -56,9 +56,11 @@ CACHE_TIMEOUT = int(os.getenv('CACHE_TIMEOUT', 3600))
 RANKINGS_CACHE_TIMEOUT = int(os.getenv('RANKINGS_CACHE_TIMEOUT', 86400))
 
 # Model Configuration
-MODEL_PATH = os.path.join("backend", "ml", "models", "model.pkl")
-SCALER_PATH = os.path.join("backend", "ml", "models", "scaler.pkl")
-FEATURES_PATH = os.path.join("backend", "ml", "models", "features.pkl")
+MODEL_DIR = os.path.join("backend", "ml", "models")
+DEFAULT_MODEL_FILE = "fight_predictor_model.joblib"
+MODEL_PATH = os.path.join(MODEL_DIR, DEFAULT_MODEL_FILE)
+SCALER_PATH = os.path.join(MODEL_DIR, "scaler.joblib")
+FEATURES_PATH = os.path.join(MODEL_DIR, "feature_names.joblib")
 FEATURE_NAMES_PATH = FEATURES_PATH
 MODEL_INFO_FILENAME = "model_info.json"
 MODEL_INFO_PATH = MODELS_DIR / MODEL_INFO_FILENAME
@@ -73,9 +75,9 @@ RETRY_ATTEMPTS = int(os.getenv('RETRY_ATTEMPTS', 3))
 RETRY_DELAY = int(os.getenv('RETRY_DELAY', 2))
 
 # Logging Configuration
-LOG_LEVEL = os.getenv('LOG_LEVEL', "INFO")
-LOG_FORMAT = os.getenv('LOG_FORMAT', "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-LOG_DATE_FORMAT = os.getenv('LOG_DATE_FORMAT', "%Y-%m-%d %H:%M:%S")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # Database settings
 DATABASE_URL = os.getenv("DATABASE_URL", "")

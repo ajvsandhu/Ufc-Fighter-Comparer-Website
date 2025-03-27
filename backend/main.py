@@ -19,7 +19,7 @@ from backend.constants import (
     CORS_HEADERS,
     CORS_CREDENTIALS
 )
-from backend.api.routes import fighters, predictions
+from backend.utils import sanitize_json
 from backend.api.database import get_db_connection, check_database_connection
 from backend.ml.model_loader import load_model, get_loaded_model
 
@@ -34,38 +34,29 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Helper function to sanitize JSON values (replaces middleware)
-def sanitize_json(obj):
-    """Recursively sanitize JSON values to prevent client-side errors."""
-    # Prevent module loading issues by using a module-level flag
-    if hasattr(sanitize_json, '_is_sanitizing'):
-        # If we're already sanitizing, return as-is to prevent recursion
-        return obj
-        
-    try:
-        # Set the flag to prevent circular imports during sanitization
-        sanitize_json._is_sanitizing = True
-        
-        if isinstance(obj, dict):
-            # Clean dictionary values
-            return {k: sanitize_json(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            # Clean list items
-            return [sanitize_json(item) for item in obj]
-        elif obj is None:
-            # Convert None to empty string for string context
-            return ""
-        else:
-            # Keep other values as-is
-            return obj
-    finally:
-        # Always clear the flag when done
-        if hasattr(sanitize_json, '_is_sanitizing'):
-            delattr(sanitize_json, '_is_sanitizing')
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Load model on startup with multiple attempts
+    """Application startup and shutdown events"""
+    # Log startup
+    logger.info("Starting UFC Fighter Prediction API")
+    
+    # Create FastAPI app
+    logger.info(f"Initializing {APP_TITLE} v{APP_VERSION}")
+    
+    # Setup model and database
+    await setup_dependencies()
+    
+    # Log startup complete
+    logger.info("Application startup complete")
+    
+    yield
+    
+    # Cleanup on shutdown
+    logger.info("Application shutting down...")
+
+async def setup_dependencies():
+    """Setup required dependencies like model and database"""
+    # Load model with multiple attempts
     model_loaded = False
     try:
         for attempt in range(3):  # Try up to 3 times
@@ -87,7 +78,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"Unexpected error loading model on startup: {str(e)}")
         logger.error(traceback.format_exc())
     
-    # Check database connection on startup with retry
+    # Check database connection with retry
     db_connected = False
     try:
         for attempt in range(3):  # Try up to 3 times
@@ -106,13 +97,9 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error checking database connection: {str(e)}")
         logger.error(traceback.format_exc())
     
-    # Log startup status
-    logger.info(f"Application startup complete. Model loaded: {model_loaded}, Database connected: {db_connected}")
-    
-    yield
-    
-    # Clean up resources if needed
-    logger.info("Shutting down application...")
+    # Log dependency status
+    logger.info(f"Dependencies initialized - Model loaded: {model_loaded}, Database connected: {db_connected}")
+    return model_loaded, db_connected
 
 # Create FastAPI app
 app = FastAPI(
@@ -134,17 +121,23 @@ app.add_middleware(
 # Log CORS configuration
 logger.info(f"CORS configured with origins: {CORS_ORIGINS}")
 
+# Import route modules directly to avoid circular imports
+from backend.api.routes.fighters import router as fighters_router
+from backend.api.routes.predictions import router as predictions_router
+
 # Include routers
-app.include_router(fighters.router)
-app.include_router(predictions.router)
+app.include_router(fighters_router)
+app.include_router(predictions_router)
 
 @app.get("/")
 def read_root():
+    """Root endpoint - API health check"""
     response_data = {"message": "UFC Fighter Prediction API is running!"}
     return sanitize_json(response_data)
 
 @app.get("/health")
 def health_check():
+    """Health check endpoint - returns status of model and database"""
     # Do basic checks
     model = get_loaded_model()
     db_connected = check_database_connection()
@@ -205,7 +198,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         content=sanitized_data
     )
 
-# Run the API with uvicorn
+# Run the API with uvicorn when script is executed directly
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=True)

@@ -22,7 +22,7 @@ from urllib.parse import unquote
 from pydantic import BaseModel
 from backend.ml.model_loader import get_loaded_model, get_loaded_scaler, get_loaded_features, load_model
 from backend.ml.predictor_simple import predict_winner  # Using our simpler implementation
-from backend.main import sanitize_json  # Import sanitize_json function
+from backend.utils import sanitize_json  # Import from utils module instead of main
 
 # Set up logging
 logging.basicConfig(
