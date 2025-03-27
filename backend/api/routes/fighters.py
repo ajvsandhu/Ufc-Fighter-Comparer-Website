@@ -11,6 +11,7 @@ from backend.constants import (
     DEFAULT_RECORD,
     UNRANKED_VALUE
 )
+import traceback
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -170,34 +171,81 @@ def get_fighter(fighter_name: str):
             clean_name = fighter_name.split("(")[0].strip()
             logger.info(f"Extracted clean name: {clean_name}")
         
-        # Fetch fighter stats from Supabase
+        # Try multiple search methods to maximize chances of finding the fighter
+        fighter_data = None
+        
+        # Method 1: Direct match
         response = supabase.table('fighters')\
             .select('*')\
             .eq('fighter_name', clean_name)\
             .execute()
-        
-        if not response.data:
-            logger.warning(f"Fighter not found: {clean_name}")
             
-            # If direct match fails, try a partial match
+        if response.data and len(response.data) > 0:
+            fighter_data = response.data[0]
+            logger.info(f"Found fighter via direct match: {clean_name}")
+        
+        # Method 2: Case insensitive match if direct match failed
+        if not fighter_data:
+            response = supabase.table('fighters')\
+                .select('*')\
+                .ilike('fighter_name', clean_name)\
+                .execute()
+                
+            if response.data and len(response.data) > 0:
+                fighter_data = response.data[0]
+                logger.info(f"Found fighter via case-insensitive match: {clean_name}")
+        
+        # Method 3: Partial match if previous methods failed
+        if not fighter_data:
             response = supabase.table('fighters')\
                 .select('*')\
                 .ilike('fighter_name', f'%{clean_name}%')\
                 .limit(1)\
                 .execute()
                 
-            if not response.data:
-                logger.warning(f"Fighter not found with partial match either: {clean_name}")
-                raise HTTPException(status_code=404, detail=f"Fighter not found: {clean_name}")
+            if response.data and len(response.data) > 0:
+                fighter_data = response.data[0]
+                logger.info(f"Found fighter via partial match: {clean_name}")
         
-        # Return first matching fighter
-        fighter_data = response.data[0]
+        # If all methods failed, raise 404
+        if not fighter_data:
+            logger.warning(f"Fighter not found with any method: {clean_name}")
+            raise HTTPException(status_code=404, detail=f"Fighter not found: {clean_name}")
+        
+        # Ensure all expected fields have values to prevent client-side errors
+        default_fighter = {
+            "fighter_name": clean_name,
+            "Record": "0-0-0",
+            "Height": "",
+            "Weight": "",
+            "Reach": "",
+            "STANCE": "",
+            "DOB": "",
+            "SLpM": 0,
+            "Str. Acc.": 0,
+            "SApM": 0,
+            "Str. Def": 0,
+            "TD Avg.": 0,
+            "TD Acc.": 0,
+            "TD Def.": 0,
+            "Sub. Avg.": 0,
+            "image_url": "",
+            "ranking": 0,
+            "is_champion": False
+        }
+        
+        # Apply defaults for any missing fields
+        for key, default_value in default_fighter.items():
+            if key not in fighter_data or fighter_data[key] is None:
+                fighter_data[key] = default_value
+        
         logger.info(f"Successfully retrieved fighter: {clean_name}")
         return fighter_data
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error in get_fighter: {str(e)}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @router.get("/fighter-details/{fighter_name}")

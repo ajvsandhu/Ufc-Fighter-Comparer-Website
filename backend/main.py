@@ -80,6 +80,9 @@ app.add_middleware(
     allow_headers=CORS_HEADERS,
 )
 
+# Log CORS configuration
+logger.info(f"CORS configured with origins: {CORS_ORIGINS}")
+
 # Include routers
 app.include_router(fighters.router)
 app.include_router(predictions.router)
@@ -106,18 +109,37 @@ async def general_exception_handler(request: Request, exc: Exception):
     """Handle all unhandled exceptions and return a consistent error response."""
     logger.error(f"Unhandled exception: {str(exc)}")
     logger.error(traceback.format_exc())
+    
+    # Add request path to help with debugging
+    path = request.url.path
+    method = request.method
+    
     return JSONResponse(
         status_code=500,
-        content={"detail": f"Internal server error: {str(exc)}"}
+        content={
+            "detail": f"Internal server error: {str(exc)}",
+            "path": path,
+            "method": method,
+            "type": type(exc).__name__
+        }
     )
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     """Handler for HTTP exceptions to ensure consistent logging."""
     logger.warning(f"HTTP exception: {exc.status_code} - {exc.detail}")
+    
+    # Add request path to help with debugging
+    path = request.url.path
+    method = request.method
+    
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.detail}
+        content={
+            "detail": exc.detail,
+            "path": path,
+            "method": method
+        }
     )
 
 # Run the API with uvicorn

@@ -35,7 +35,7 @@ SERVER_PORT = int(os.getenv('API_PORT', 8000))
 DEBUG_MODE = os.getenv('DEBUG', 'False').lower() == 'true'
 
 # CORS Configuration
-CORS_ORIGINS = os.getenv('CORS_ORIGINS', "http://localhost:3000,http://localhost:8000,https://ufc-fighter-data-api.vercel.app,https://ufc-fighter-data-api-git-main.vercel.app,http://ufc-fighter-data-api.vercel.app").split(',')
+CORS_ORIGINS = os.getenv('CORS_ORIGINS', "http://localhost:3000,http://localhost:8000,https://ufc-fighter-data-api.vercel.app,https://ufc-fighter-data-api-git-main.vercel.app,http://ufc-fighter-data-api.vercel.app,https://*.vercel.app").split(',')
 CORS_ORIGINS_REGEX = os.getenv("CORS_ORIGINS_REGEX", "")
 CORS_METHODS = ["*"]
 CORS_HEADERS = ["*"]
