@@ -94,6 +94,16 @@ async def reset_model_config():
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error resetting config: {str(e)}")
 
+@router.get("/retrain")
+async def retrain_model():
+    """Force retrain the model with current numpy version"""
+    try:
+        predictor.train(force=True)
+        return {"message": "Model retrained successfully"}
+    except Exception as e:
+        logger.error(f"Error retraining model: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 def format_fighter_data(fighter_data: Dict, last_5_fights: List) -> Dict[str, Any]:
     """Format fighter data for consistent structure"""
     # Create a copy to avoid modifying the original
