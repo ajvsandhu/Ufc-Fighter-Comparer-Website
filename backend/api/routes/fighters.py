@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException
+import sqlite3
 from backend.api.database import get_db_connection
 import re
 from typing import List, Dict
@@ -15,7 +16,7 @@ from backend.constants import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix=API_V1_PREFIX)
+router = APIRouter(prefix=API_V1_PREFIX, tags=["Fighters"])
 
 @router.get("/fighters")
 def get_fighters(query: str = Query("", min_length=0)):
@@ -30,22 +31,34 @@ def get_fighters(query: str = Query("", min_length=0)):
             # Fetch fighters data from Supabase
             if not query:
                 # If no query, return all fighters
-                response = supabase.table('fighters')\
-                    .select('fighter_name,Record,ranking')\
-                    .order('ranking')\
-                    .execute()
+                try:
+                    # First try with nulls_last parameter
+                    response = supabase.table('fighters')\
+                        .select('fighter_name,Record,ranking,id')\
+                        .order('ranking', desc=False, nulls_last=True)\
+                        .limit(MAX_SEARCH_RESULTS)\
+                        .execute()
+                except Exception:
+                    # Fall back to simpler ordering if the above fails
+                    response = supabase.table('fighters')\
+                        .select('fighter_name,Record,ranking,id')\
+                        .order('ranking')\
+                        .limit(MAX_SEARCH_RESULTS)\
+                        .execute()
             else:
                 # If query exists, use ilike for case-insensitive search
                 response = supabase.table('fighters')\
-                    .select('fighter_name,Record,ranking')\
+                    .select('fighter_name,Record,ranking,id')\
                     .ilike('fighter_name', f'%{query}%')\
                     .order('ranking')\
+                    .limit(MAX_SEARCH_RESULTS)\
                     .execute()
             
             if not response.data:
                 return {"fighters": []}
             
             fighter_data = response.data
+            logger.info(f"Found {len(fighter_data)} fighters matching query: {query}")
         except Exception as e:
             logger.error(f"Error fetching fighters: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
@@ -95,131 +108,117 @@ def get_fighters(query: str = Query("", min_length=0)):
                     # Format name with record and add to results
                     formatted_name = f"{fighter_name} ({record})"
                     fighters_list.append(formatted_name)
-            
-            # Sort results by ranking (if available) and then alphabetically
-            def sort_key(name):
-                # Extract original fighter name from the formatted string
-                original_name = name.split(" (")[0]
-                # Find the corresponding ranking
-                for fighter in fighter_data:
-                    if fighter.get('fighter_name') == original_name:
-                        ranking = fighter.get('ranking')
-                        # Return tuple for sorting: (has_ranking, ranking_value, name)
-                        return (ranking is not None, ranking if ranking is not None else UNRANKED_VALUE, original_name)
-                return (False, UNRANKED_VALUE, original_name)
-            
-            fighters_list.sort(key=sort_key)
         
+        # Return result in expected format
+        logger.info(f"Returning {len(fighters_list)} fighters")
         return {"fighters": fighters_list[:MAX_SEARCH_RESULTS]}
-        
     except Exception as e:
-        logger.error(f"Error in get_fighters: {str(e)}")
+        logger.error(f"Unexpected error in get_fighters: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-@router.get("/fighter/{name:path}")
-def get_fighter_stats(name: str):
-    """Get detailed stats for a specific fighter."""
-    logger.info(f"Getting stats for fighter: {name}")
-    supabase = get_db_connection()
-    if not supabase:
-        logger.error("No database connection available")
-        raise HTTPException(status_code=500, detail="Database connection error")
-
+@router.get("/fighter-stats/{fighter_name}")
+def get_fighter_stats(fighter_name: str):
+    """Get fighter stats by name."""
     try:
-        # Decode URL-encoding and clean the name
-        name = unquote(name).strip()
-        logger.info(f"Decoded name: {name}")
+        supabase = get_db_connection()
+        if not supabase:
+            logger.error("No database connection available")
+            raise HTTPException(status_code=500, detail="Database connection error")
         
-        # Extract base name and record if present
-        base_name = name
-        record = None
+        # Clean fighter name - remove record if present
+        if "(" in fighter_name:
+            fighter_name = fighter_name.split("(")[0].strip()
         
-        # Check if name contains record in parentheses
-        if "(" in name and ")" in name:
-            base_name = name.split("(")[0].strip()
-            record_part = name.split("(")[1].split(")")[0].strip()
-            record = record_part
-            logger.info(f"Extracted base_name: {base_name}, record: {record}")
-
-        # Initialize fighter_info to None
-        fighter_info = None
-        
-        # First try exact match with record if available
-        if record:
-            response = supabase.table('fighters')\
-                .select('*')\
-                .eq('fighter_name', base_name)\
-                .eq('Record', record)\
-                .execute()
-                
-            if response.data and len(response.data) > 0:
-                fighter_info = response.data[0]
-                logger.info(f"Found fighter by exact name and record match: {fighter_info['fighter_name']}")
-
-        # If no match with record, try just the name
-        if not fighter_info:
-            response = supabase.table('fighters')\
-                .select('*')\
-                .ilike('fighter_name', base_name)\
-                .execute()
-                
-            if response.data and len(response.data) > 0:
-                fighter_info = response.data[0]
-                logger.info(f"Found fighter by name only: {fighter_info['fighter_name']}")
-
-        # If still no match, try fuzzy match
-        if not fighter_info:
-            response = supabase.table('fighters')\
-                .select('*')\
-                .ilike('fighter_name', f'%{base_name}%')\
-                .execute()
-                
-            if response.data and len(response.data) > 0:
-                fighter_info = response.data[0]
-                logger.info(f"Found fighter by fuzzy match: {fighter_info['fighter_name']}")
-
-        if not fighter_info:
-            logger.warning(f"Fighter not found: {name}")
-            raise HTTPException(status_code=404, detail=f"Fighter not found: {name}")
-
-        # Get the fighter's last 5 fights
-        fights_response = supabase.table('fighter_last_5_fights')\
+        # Fetch fighter stats from Supabase
+        response = supabase.table('fighters')\
             .select('*')\
-            .eq('fighter_name', fighter_info['fighter_name'])\
-            .order('id')\
-            .limit(MAX_FIGHTS_DISPLAY)\
+            .eq('fighter_name', fighter_name)\
             .execute()
-            
-        last_5_fights = fights_response.data if fights_response.data else []
-
-        # Format the response
-        return {
-            "name": fighter_info['fighter_name'],
-            "image_url": fighter_info.get('image_url', ''),
-            "record": fighter_info.get('Record', ''),
-            "height": fighter_info.get('Height', ''),
-            "weight": fighter_info.get('Weight', ''),
-            "reach": fighter_info.get('Reach', ''),
-            "stance": fighter_info.get('STANCE', ''),
-            "dob": fighter_info.get('DOB', ''),
-            "slpm": fighter_info.get('SLpM', ''),
-            "str_acc": fighter_info.get('Str. Acc.', ''),
-            "sapm": fighter_info.get('SApM', ''),
-            "str_def": fighter_info.get('Str. Def', ''),
-            "td_avg": fighter_info.get('TD Avg.', ''),
-            "td_acc": fighter_info.get('TD Acc.', ''),
-            "td_def": fighter_info.get('TD Def.', ''),
-            "sub_avg": fighter_info.get('Sub. Avg.', ''),
-            "fighter_url": fighter_info.get('fighter_url', ''),
-            "tap_link": fighter_info.get('tap_link', ''),
-            "unique_id": str(fighter_info.get('id', '')),
-            "ranking": fighter_info.get('ranking', ''),
-            "last_5_fights": last_5_fights
-        }
-
+        
+        if not response.data:
+            logger.warning(f"Fighter not found: {fighter_name}")
+            raise HTTPException(status_code=404, detail=f"Fighter not found: {fighter_name}")
+        
+        # Return first matching fighter
+        fighter_data = response.data[0]
+        logger.info(f"Retrieved stats for fighter: {fighter_name}")
+        return fighter_data
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Database error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        logger.error(f"Error fetching fighter stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+@router.get("/fighter-details/{fighter_name}")
+def get_fighter_details(fighter_name: str):
+    """Get detailed fighter information by name."""
+    try:
+        # Use the same logic as get_fighter_stats but with more detailed logging
+        fighter_data = get_fighter_stats(fighter_name)
+        logger.info(f"Retrieved detailed information for fighter: {fighter_name}")
+        return fighter_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching fighter details: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+@router.get("/fighter-average-stats")
+def get_fighter_average_stats():
+    """Get average stats across all fighters."""
+    try:
+        supabase = get_db_connection()
+        if not supabase:
+            logger.error("No database connection available")
+            raise HTTPException(status_code=500, detail="Database connection error")
+        
+        # Fetch all fighters data from Supabase for calculating averages
+        response = supabase.table('fighters').select('*').execute()
+        
+        if not response.data:
+            logger.warning("No fighters found in database")
+            raise HTTPException(status_code=404, detail="No fighters found")
+        
+        fighters = response.data
+        
+        # Calculate averages of numerical fields
+        numeric_fields = [
+            'SSLA', 'SApM', 'SSA', 'TDA', 'TDD', 'KD', 'SLPM', 'StrAcc', 'StrDef', 'SUB', 'TD',
+            'Height', 'Weight', 'Reach', 'Win', 'Loss', 'Draw', 'winratio'
+        ]
+        
+        # Initialize sums and counts
+        sums = {field: 0 for field in numeric_fields}
+        counts = {field: 0 for field in numeric_fields}
+        
+        # Sum up values
+        for fighter in fighters:
+            for field in numeric_fields:
+                if field in fighter and fighter[field] is not None:
+                    try:
+                        # Convert to float if it's a string
+                        value = float(fighter[field]) if isinstance(fighter[field], str) else fighter[field]
+                        sums[field] += value
+                        counts[field] += 1
+                    except (ValueError, TypeError):
+                        # Skip if conversion fails
+                        pass
+        
+        # Calculate averages
+        averages = {}
+        for field in numeric_fields:
+            if counts[field] > 0:
+                averages[field] = round(sums[field] / counts[field], 2)
+            else:
+                averages[field] = 0
+        
+        logger.info("Calculated average stats across all fighters")
+        return averages
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error calculating fighter average stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 def process_fighter_name(raw_name: str) -> str:
     """
@@ -239,12 +238,67 @@ def process_fighter_name(raw_name: str) -> str:
     nickname = match.group(1)
     # Remove the nickname portion from the full string, leaving the outside
     outside_parts = re.sub(pattern, '', raw_name).strip()
-    
-    # Check if there are at least two parts to the name outside the nickname
-    outside_words = outside_parts.split()
-    if len(outside_words) >= 2:
-        # Reconstruct name with nickname
+
+    # Count how many words remain outside the quotes
+    word_count = len(outside_parts.split())
+    if word_count >= 2:
+        # If there are at least two words (e.g. "Israel Adesanya"), keep the nickname
         return raw_name.strip()
     else:
-        # Just return the outside part without the nickname
-        return outside_parts 
+        # Only one name outside the quotes, remove the nickname entirely
+        return outside_parts
+
+@router.post("/scrape_and_store_fighters")
+def scrape_and_store_fighters(fighters: List[Dict]):
+    """
+    Example route to show how you'd store fighters so that the DB ends up
+    with the nickname if there's a first+last name, or no nickname if
+    there's only one name.
+    In your real code, adapt this insertion logic to wherever your
+    actual scraper populates the DB.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    for f in fighters:
+        # Suppose each 'f' is a dict like:
+        # {"fighter_name": "Israel 'The Last Stylebender' Adesanya", "image_url": "...", etc.}
+        processed_name = process_fighter_name(f["fighter_name"])
+        # Insert into the DB with the processed name
+        try:
+            cur.execute(
+                """
+                INSERT INTO fighters (fighter_name, image_url, Record, Height, Weight, Reach,
+                                      STANCE, DOB, SLpM, [Str. Acc.], SApM, [Str. Def],
+                                      [TD Avg.], [TD Acc.], [TD Def.], [Sub. Avg.], fighter_url, tap_link)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    processed_name,
+                    f.get("image_url", ""),
+                    f.get("Record", ""),
+                    f.get("Height", ""),
+                    f.get("Weight", ""),
+                    f.get("Reach", ""),
+                    f.get("STANCE", ""),
+                    f.get("DOB", ""),
+                    f.get("SLpM", ""),
+                    f.get("Str. Acc.", ""),
+                    f.get("SApM", ""),
+                    f.get("Str. Def", ""),
+                    f.get("TD Avg.", ""),
+                    f.get("TD Acc.", ""),
+                    f.get("TD Def.", ""),
+                    f.get("Sub. Avg.", ""),
+                    f.get("fighter_url", ""),
+                    f.get("tap_link", "")  # Add tap_link to insertion
+                )
+            )
+        except sqlite3.Error as e:
+            logger.error(f"Database insertion error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to insert fighter: {str(e)}")
+
+    conn.commit()
+    conn.close()
+    return {"detail": "Fighters inserted successfully, with correct nickname handling."}
+

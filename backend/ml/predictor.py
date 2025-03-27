@@ -1,7 +1,7 @@
 """
 UFC Fight Predictor
 
-A machine learning system that predicts who's going to win in a UFC fight! 🥊
+A machine learning system that predicts who's going to win in a UFC fight
 Uses fighter stats, recent performance, and physical attributes to make smart predictions.
 """
 
@@ -11,6 +11,7 @@ import pickle
 import logging
 import math
 import numpy as np
+import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple, Union
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -20,6 +21,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.calibration import CalibratedClassifierCV
 import random
 import joblib
+import traceback
 
 from backend.api.database import get_db_connection
 from backend.ml.config import get_config
@@ -48,8 +50,11 @@ from backend.constants import (
     LOG_LEVEL,
     LOG_FORMAT,
     LOG_DATE_FORMAT,
-    DB_PATH
+    DB_PATH,
+    IMPORTANT_FEATURES,
+    DEFAULT_CONFIDENCE
 )
+from backend.ml.model_loader import get_loaded_model, get_loaded_scaler, get_loaded_features
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),

@@ -24,10 +24,10 @@ DB_NAME = os.getenv('DB_NAME', "ufc_fighters.db")
 DB_PATH = Path(os.getenv('DB_PATH', DATA_DIR / DB_NAME))
 
 # API Configuration
-API_V1_PREFIX = os.getenv('API_PREFIX', "/api/v1")
-API_TITLE = "UFC Fighter Showdown API"
-API_DESCRIPTION = "API for comparing UFC fighters and predicting fight outcomes"
-API_VERSION = os.getenv('API_VERSION', "1.0.0")
+APP_TITLE = "UFC Fighter Prediction API"
+APP_DESCRIPTION = "API for UFC fighter statistics and fight outcome predictions"
+APP_VERSION = "1.0.0"
+API_V1_STR = "/api/v1"
 
 # Server Configuration
 SERVER_HOST = os.getenv('API_HOST', "0.0.0.0")
@@ -35,7 +35,8 @@ SERVER_PORT = int(os.getenv('API_PORT', 8000))
 DEBUG_MODE = os.getenv('DEBUG', 'False').lower() == 'true'
 
 # CORS Configuration
-CORS_ORIGINS = os.getenv('CORS_ORIGINS', "http://localhost:3000,http://localhost:8000").split(',')
+CORS_ORIGINS = os.getenv('CORS_ORIGINS', "http://localhost:3000,http://localhost:8000,https://ufc-fighter-data-api.vercel.app").split(',')
+CORS_ORIGINS_REGEX = os.getenv("CORS_ORIGINS_REGEX", "")
 CORS_METHODS = ["*"]
 CORS_HEADERS = ["*"]
 CORS_CREDENTIALS = True
@@ -47,20 +48,17 @@ PAGINATION_PAGE_SIZE = int(os.getenv('PAGINATION_PAGE_SIZE', 20))
 
 # Fighter Constants
 UNRANKED_VALUE = 99
-DEFAULT_RECORD = "N/A"
+DEFAULT_RECORD = "0-0-0"
+DEFAULT_CONFIDENCE = 0.5
 
 # Cache Configuration
 CACHE_TIMEOUT = int(os.getenv('CACHE_TIMEOUT', 3600))
 RANKINGS_CACHE_TIMEOUT = int(os.getenv('RANKINGS_CACHE_TIMEOUT', 86400))
 
 # Model Configuration
-MODEL_VERSION = os.getenv('MODEL_VERSION', "1.0")
-MODEL_FILENAME = os.getenv('MODEL_FILENAME', "fighter_prediction_model.pkl")
-MODEL_PATH = MODELS_DIR / MODEL_FILENAME
-SCALER_FILENAME = os.getenv('SCALER_FILENAME', "scaler.pkl")
-SCALER_PATH = MODELS_DIR / SCALER_FILENAME
-FEATURE_NAMES_FILENAME = os.getenv('FEATURE_NAMES_FILENAME', "feature_names.pkl")
-FEATURE_NAMES_PATH = MODELS_DIR / FEATURE_NAMES_FILENAME
+MODEL_PATH = os.path.join("backend", "ml", "models", "model.pkl")
+SCALER_PATH = os.path.join("backend", "ml", "models", "scaler.pkl")
+FEATURES_PATH = os.path.join("backend", "ml", "models", "features.pkl")
 MODEL_INFO_FILENAME = "model_info.json"
 MODEL_INFO_PATH = MODELS_DIR / MODEL_INFO_FILENAME
 
@@ -76,6 +74,21 @@ RETRY_DELAY = int(os.getenv('RETRY_DELAY', 2))
 LOG_LEVEL = os.getenv('LOG_LEVEL', "INFO")
 LOG_FORMAT = os.getenv('LOG_FORMAT', "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 LOG_DATE_FORMAT = os.getenv('LOG_DATE_FORMAT', "%Y-%m-%d %H:%M:%S")
+
+# Database settings
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+
+# Security
+JWT_SECRET = os.getenv("JWT_SECRET", "")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+
+# Feature engineering
+IMPORTANT_FEATURES = [
+    "Win", "Loss", "Draw", "Height", "Weight", "Reach", "SLPM", 
+    "StrAcc", "SApM", "StrDef", "TD", "TDA", "TDD", "SUB"
+]
 
 # Create required directories
 os.makedirs(DATA_DIR, exist_ok=True)

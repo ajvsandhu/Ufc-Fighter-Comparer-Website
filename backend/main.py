@@ -1,58 +1,96 @@
-import logging
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from backend.api.routes.fighters_order_fix import router as fighters_router
-from backend.api.routes.predictions import router as predictions_router
-from backend.api.database import get_db_connection
-from backend.constants import (
-    API_TITLE,
-    API_DESCRIPTION,
-    API_VERSION,
-    CORS_ORIGINS,
-    CORS_METHODS,
-    CORS_HEADERS,
-    CORS_CREDENTIALS,
-    LOG_LEVEL,
-    LOG_FORMAT,
-    LOG_DATE_FORMAT,
-    SERVER_HOST,
-    SERVER_PORT
-)
-from typing import List, Dict
+import uvicorn
+import os
+from contextlib import asynccontextmanager
+import logging
+import traceback
 
-# Set up logging
+from backend.constants import APP_TITLE, APP_DESCRIPTION, APP_VERSION, API_V1_STR
+from backend.api.routes import fighters, predictions
+from backend.api.database import get_db_connection, check_database_connection
+from backend.ml.model_loader import load_model, get_loaded_model
+
+# Configure logging
 logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL),
-    format=LOG_FORMAT,
-    datefmt=LOG_DATE_FORMAT
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler()
+    ]
 )
+
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Load model on startup
+    try:
+        logger.info("Loading model on application startup...")
+        load_model()
+        model = get_loaded_model()
+        if model:
+            logger.info("Model loaded successfully!")
+        else:
+            logger.warning("Model loading failed or no model was loaded!")
+    except Exception as e:
+        logger.error(f"Error loading model on startup: {str(e)}")
+        logger.error(traceback.format_exc())
+    
+    # Check database connection on startup
+    try:
+        db_connected = check_database_connection()
+        if db_connected:
+            logger.info("Database connection successful!")
+        else:
+            logger.warning("Database connection check failed!")
+    except Exception as e:
+        logger.error(f"Error checking database connection: {str(e)}")
+        logger.error(traceback.format_exc())
+    
+    yield
+    
+    # Clean up resources if needed
+    logger.info("Shutting down application...")
+
+# Create FastAPI app
 app = FastAPI(
-    title=API_TITLE,
-    description=API_DESCRIPTION,
-    version=API_VERSION
+    title=APP_TITLE,
+    description=APP_DESCRIPTION,
+    version=APP_VERSION,
+    lifespan=lifespan
 )
 
-# Enable CORS so the frontend can communicate with the backend
+# Add CORS middleware - allow all origins for now
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_credentials=CORS_CREDENTIALS,
-    allow_methods=CORS_METHODS,
-    allow_headers=CORS_HEADERS,
+    allow_origins=["*"],  # Allow all origins for now
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Register API routes
-app.include_router(fighters_router)
-app.include_router(predictions_router)
+# Include routers
+app.include_router(fighters.router, prefix=API_V1_STR)
+app.include_router(predictions.router, prefix=API_V1_STR)
 
 @app.get("/")
-def home():
-    logger.info("Home endpoint accessed")
-    return {"message": "Welcome to the UFC Fighter Comparison API!"}
+def read_root():
+    return {"message": "UFC Fighter Prediction API is running!"}
 
+@app.get("/health")
+def health_check():
+    # Do basic checks
+    model = get_loaded_model()
+    db_connected = check_database_connection()
+    
+    return {
+        "status": "healthy" if model and db_connected else "degraded",
+        "model_loaded": bool(model),
+        "database_connected": db_connected
+    }
+
+# Run the API with uvicorn
 if __name__ == "__main__":
-    import uvicorn
-    logger.info("Starting FastAPI server...")
-    uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=True)
