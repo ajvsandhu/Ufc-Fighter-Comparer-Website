@@ -1,9 +1,9 @@
 import logging
-from supabase import create_client
 import os
 from dotenv import load_dotenv
 from functools import lru_cache
 from backend.constants import LOG_LEVEL, LOG_FORMAT, LOG_DATE_FORMAT
+from backend.supabase_client import SupabaseClient, test_connection as test_supabase_connection
 
 # Load environment variables
 load_dotenv()
@@ -29,8 +29,8 @@ def get_db_connection():
             logger.error("Missing Supabase credentials. Please check SUPABASE_URL and SUPABASE_KEY environment variables.")
             return None
         
-        # Create Supabase client
-        supabase = create_client(supabase_url, supabase_key)
+        # Use our custom SupabaseClient implementation instead of the problematic supabase.create_client()
+        supabase = SupabaseClient(supabase_url, supabase_key)
         logger.info("Successfully connected to Supabase")
         return supabase
     
@@ -46,13 +46,12 @@ def check_database_connection():
             logger.error("Failed to get Supabase connection")
             return False
         
-        # Try a simple query to verify connection
-        response = supabase.table('fighters').select('fighter_name').limit(1).execute()
-        if response and hasattr(response, 'data'):
+        # Try a test connection
+        if supabase.test_connection():
             logger.info("Database connection test successful")
             return True
         else:
-            logger.error("Database connection test failed - no data returned")
+            logger.error("Database connection test failed")
             return False
     
     except Exception as e:
