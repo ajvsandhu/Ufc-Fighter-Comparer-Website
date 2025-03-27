@@ -85,30 +85,34 @@ export default function FightPredictionsPage() {
         return null;
       }
       
+      console.log(`Fetching fighter data for comparison: ${fighterName}`);
       const response = await fetch(ENDPOINTS.FIGHTER(fighterName));
       if (!response.ok) throw new Error('Fighter not found');
       
       const data = await response.json();
+      console.log("Fighter API response:", data);
       
-      // Sanitize the data to prevent UI crashes
+      // Map backend field names to what our frontend expects
       const sanitizedData: FighterStats = {
-        name: data?.name || fighterName || '',
+        name: data?.fighter_name || data?.name || fighterName || '',
         image_url: data?.image_url || '',
-        record: data?.record || '',
-        height: data?.height || '',
-        weight: data?.weight || '',
-        reach: data?.reach || '',
-        stance: data?.stance || '',
-        slpm: data?.slpm || '0',
-        str_acc: data?.str_acc || '0%',
-        sapm: data?.sapm || '0',
-        str_def: data?.str_def || '0%',
-        td_avg: data?.td_avg || '0',
-        td_acc: data?.td_acc || '0%',
-        td_def: data?.td_def || '0%',
-        sub_avg: data?.sub_avg || '0',
+        record: data?.Record || data?.record || '',
+        height: data?.Height || data?.height || '',
+        weight: data?.Weight || data?.weight || '',
+        reach: data?.Reach || data?.reach || '',
+        stance: data?.STANCE || data?.stance || '',
+        slpm: data?.SLpM || data?.SLPM || data?.slpm || '0',
+        str_acc: data?.['Str. Acc.'] || data?.str_acc || '0%',
+        sapm: data?.SApM || data?.SAPM || data?.sapm || '0',
+        str_def: data?.['Str. Def'] || data?.str_def || '0%',
+        td_avg: data?.['TD Avg.'] || data?.td_avg || '0',
+        td_acc: data?.['TD Acc.'] || data?.td_acc || '0%',
+        td_def: data?.['TD Def.'] || data?.td_def || '0%',
+        sub_avg: data?.['Sub. Avg.'] || data?.sub_avg || '0',
         ranking: data?.ranking || 0,
       };
+      
+      console.log("Mapped fighter data for comparison:", sanitizedData);
       
       // Make sure all fields have values
       if (typeof sanitizedData.name !== 'string') sanitizedData.name = fighterName || '';

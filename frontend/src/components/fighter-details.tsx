@@ -189,37 +189,79 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
       setError(null);
 
       try {
+        // Log the API call for debugging
+        console.log(`Fetching fighter data for: ${fighterName}`);
+        
         const response = await fetch(ENDPOINTS.FIGHTER(fighterName));
         if (!response.ok) {
           throw new Error(response.status === 404 ? 'Fighter not found' : 'Failed to fetch fighter data');
         }
 
         const data = await response.json();
+        console.log("Raw fighter data received:", data);
         
-        // Sanitize the fighter data to prevent UI crashes
+        // Check for fight history in different possible formats
+        let fightHistoryData: FightHistory[] = [];
+        if (Array.isArray(data?.last_5_fights)) {
+          fightHistoryData = data.last_5_fights;
+        } else if (Array.isArray(data?.fights)) {
+          fightHistoryData = data.fights;
+        }
+        
+        // Map and sanitize fight history data
+        const processedFightHistory = fightHistoryData.map((fight: any) => {
+          return {
+            opponent_name: fight?.opponent_name || fight?.opponent || 'Unknown Opponent',
+            opponent_display_name: fight?.opponent_display_name || fight?.opponent || 'Unknown Opponent',
+            result: fight?.result || 'NC',
+            method: fight?.method || 'N/A',
+            round: fight?.round || 0,
+            time: fight?.time || '0:00',
+            event: fight?.event || 'Unknown Event',
+            date: fight?.date || 'Unknown Date',
+            opponent_stats: fight?.opponent_stats || null,
+            kd: fight?.kd || '0',
+            sig_str: fight?.sig_str || '0/0',
+            sig_str_pct: fight?.sig_str_pct || '0%',
+            total_str: fight?.total_str || '0/0',
+            head_str: fight?.head_str || '0/0',
+            body_str: fight?.body_str || '0/0',
+            leg_str: fight?.leg_str || '0/0',
+            takedowns: fight?.takedowns || '0/0',
+            td_pct: fight?.td_pct || '0%',
+            ctrl: fight?.ctrl || '0:00',
+          };
+        });
+        
+        console.log("Processed fight history:", processedFightHistory);
+        
+        // Properly map API fields to our expected structure
+        // This handles any field name mismatches between backend and frontend
         const sanitizedData: Record<string, any> = {
-          name: data?.name || fighterName || '',
+          name: data?.fighter_name || data?.name || fighterName || '',
           image_url: data?.image_url || DEFAULT_PLACEHOLDER_IMAGE,
-          record: data?.record || DEFAULT_VALUE,
-          height: data?.height || DEFAULT_VALUE,
-          weight: data?.weight || DEFAULT_VALUE,
-          reach: data?.reach || DEFAULT_VALUE,
-          stance: data?.stance || DEFAULT_VALUE,
-          dob: data?.dob || '',
-          slpm: data?.slpm || DEFAULT_VALUE,
-          str_acc: data?.str_acc || DEFAULT_PERCENTAGE,
-          sapm: data?.sapm || DEFAULT_VALUE,
-          str_def: data?.str_def || DEFAULT_PERCENTAGE,
-          td_avg: data?.td_avg || DEFAULT_VALUE,
-          td_acc: data?.td_acc || DEFAULT_PERCENTAGE,
-          td_def: data?.td_def || DEFAULT_PERCENTAGE,
-          sub_avg: data?.sub_avg || DEFAULT_VALUE,
+          record: data?.Record || data?.record || DEFAULT_VALUE,
+          height: data?.Height || data?.height || DEFAULT_VALUE,
+          weight: data?.Weight || data?.weight || DEFAULT_VALUE,
+          reach: data?.Reach || data?.reach || DEFAULT_VALUE,
+          stance: data?.STANCE || data?.stance || DEFAULT_VALUE,
+          dob: data?.DOB || data?.dob || '',
+          slpm: data?.SLpM || data?.SLPM || data?.slpm || DEFAULT_VALUE,
+          str_acc: data?.['Str. Acc.'] || data?.str_acc || DEFAULT_PERCENTAGE,
+          sapm: data?.SApM || data?.SAPM || data?.sapm || DEFAULT_VALUE,
+          str_def: data?.['Str. Def'] || data?.str_def || DEFAULT_PERCENTAGE,
+          td_avg: data?.['TD Avg.'] || data?.td_avg || DEFAULT_VALUE,
+          td_acc: data?.['TD Acc.'] || data?.td_acc || DEFAULT_PERCENTAGE,
+          td_def: data?.['TD Def.'] || data?.td_def || DEFAULT_PERCENTAGE,
+          sub_avg: data?.['Sub. Avg.'] || data?.sub_avg || DEFAULT_VALUE,
           weight_class: data?.weight_class || '',
           nickname: data?.nickname || '',
           last_5_fights: Array.isArray(data?.last_5_fights) ? data.last_5_fights : [],
           ranking: data?.ranking || UNRANKED_VALUE,
           tap_link: data?.tap_link || '',
         };
+        
+        console.log("Mapped fighter data:", sanitizedData);
         
         // Ensure string values for all fields that might be used with string methods
         Object.keys(sanitizedData).forEach(key => {
@@ -229,7 +271,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
         });
         
         setStats(sanitizedData as FighterStats);
-        setFightHistory(Array.isArray(data?.last_5_fights) ? data.last_5_fights : []);
+        setFightHistory(processedFightHistory);
       } catch (err) {
         console.error('Error fetching fighter:', err);
         setError(err instanceof Error ? err.message : 'Failed to fetch fighter data');
@@ -266,39 +308,91 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
   // Calculate fight stats
   const fightStats = React.useMemo<FightStatCategory[]>(() => {
     if (!stats) return [];
+    
+    const safeParseFloat = (value: string) => {
+      try {
+        if (!value || typeof value !== 'string') return 0;
+        // Remove any non-numeric characters except decimal point
+        const sanitized = value.replace(/[^\d.]/g, '');
+        const num = parseFloat(sanitized);
+        return isNaN(num) ? 0 : num;
+      } catch (e) {
+        console.error(`Error parsing value: ${value}`, e);
+        return 0;
+      }
+    };
+    
+    const safeReplacePercent = (value: string) => {
+      try {
+        if (!value || typeof value !== 'string') return '0%';
+        // Remove any existing % symbol and add it back
+        const sanitized = value.replace(/%/g, '').trim();
+        return `${sanitized}%`;
+      } catch (e) {
+        console.error(`Error processing percent: ${value}`, e);
+        return '0%';
+      }
+    };
+    
     return [
       { 
         category: 'Striking', 
         stats: [
-          { label: 'Strikes Landed/min', value: parseFloat(stats.slpm).toFixed(1) },
-          { label: 'Strike Accuracy', value: stats.str_acc.replace('%', '') + '%' },
-          { label: 'Strikes Absorbed/min', value: parseFloat(stats.sapm).toFixed(1) },
-          { label: 'Strike Defense', value: stats.str_def.replace('%', '') + '%' },
+          { label: 'Strikes Landed/min', value: safeParseFloat(stats.slpm).toFixed(1) },
+          { label: 'Strike Accuracy', value: safeReplacePercent(stats.str_acc) },
+          { label: 'Strikes Absorbed/min', value: safeParseFloat(stats.sapm).toFixed(1) },
+          { label: 'Strike Defense', value: safeReplacePercent(stats.str_def) },
         ]
       },
       { 
         category: 'Grappling', 
         stats: [
-          { label: 'Takedowns/15min', value: parseFloat(stats.td_avg).toFixed(1) },
-          { label: 'Takedown Accuracy', value: stats.td_acc.replace('%', '') + '%' },
-          { label: 'Takedown Defense', value: stats.td_def.replace('%', '') + '%' },
-          { label: 'Submissions/15min', value: parseFloat(stats.sub_avg).toFixed(1) },
+          { label: 'Takedowns/15min', value: safeParseFloat(stats.td_avg).toFixed(1) },
+          { label: 'Takedown Accuracy', value: safeReplacePercent(stats.td_acc) },
+          { label: 'Takedown Defense', value: safeReplacePercent(stats.td_def) },
+          { label: 'Submissions/15min', value: safeParseFloat(stats.sub_avg).toFixed(1) },
         ]
       },
     ];
   }, [stats]);
 
   const calculateAge = (dob: string) => {
-    const birthDate = new Date(dob);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
+    // Return empty string if DOB is not provided
+    if (!dob) return '';
     
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
+    try {
+      // Check if the date is in a valid format
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dob) && 
+          !/^\d{2}\/\d{2}\/\d{4}$/.test(dob) &&
+          !/^\w+ \d{1,2}, \d{4}$/.test(dob)) {
+        return '';
+      }
+      
+      const birthDate = new Date(dob);
+      // Check if the date is valid
+      if (isNaN(birthDate.getTime())) {
+        return '';
+      }
+      
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      
+      // Ensure age is reasonable (between 18 and 50 for fighters)
+      if (age < 18 || age > 50) {
+        console.warn(`Calculated age ${age} from DOB ${dob} seems suspicious`);
+        return '';
+      }
+      
+      return age;
+    } catch (error) {
+      console.error(`Error calculating age from DOB: ${dob}`, error);
+      return '';
     }
-    
-    return age;
   };
 
   if (isLoading) {
@@ -375,12 +469,12 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6 animate-in slide-in-from-bottom duration-700 delay-300">
                 {[
-                  { label: 'Height', value: stats.height },
-                  { label: 'Weight', value: stats.weight },
-                  { label: 'Reach', value: stats.reach },
-                  { label: 'Stance', value: stats.stance },
-                  { label: 'DOB', value: `${stats.dob} (${calculateAge(stats.dob)} years)` },
-                  { label: 'Ranking', value: stats.ranking === 99 || stats.ranking === '99' ? 'Unranked' : `#${stats.ranking}` },
+                  { label: 'Height', value: stats.height || 'N/A' },
+                  { label: 'Weight', value: stats.weight || 'N/A' },
+                  { label: 'Reach', value: stats.reach || 'N/A' },
+                  { label: 'Stance', value: stats.stance || 'N/A' },
+                  { label: 'DOB', value: stats.dob ? `${stats.dob} ${calculateAge(stats.dob) ? `(${calculateAge(stats.dob)} years)` : ''}` : 'N/A' },
+                  { label: 'Ranking', value: stats.ranking === 99 || stats.ranking === '99' ? 'Unranked' : `#${stats.ranking || 'N/A'}` },
                 ].map(({ label, value }, index) => (
                   <div 
                     key={label} 
@@ -388,7 +482,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                     style={{ animationDelay: `${(index + 1) * 100}ms` }}
                   >
                     <p className="text-sm text-muted-foreground">{label}</p>
-                    <p className="font-medium">{value || 'N/A'}</p>
+                    <p className="font-medium">{value}</p>
                   </div>
                 ))}
               </div>
