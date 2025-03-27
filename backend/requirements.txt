@@ -15,8 +15,5 @@ requests==2.31.0
 beautifulsoup4==4.12.3
 
 # Database dependencies
-supabase-py==1.0.3
-postgrest==0.13.0
-
-# Common dependencies
+supabase==2.3.4
 python-dotenv==1.0.0 

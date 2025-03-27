@@ -8,12 +8,17 @@ from typing import Dict, List, Any, Optional, Tuple
 import logging
 import traceback
 from supabase import create_client, Client
+from dotenv import load_dotenv
 
-# Import configuration
-from backend.config import SUPABASE_URL, SUPABASE_KEY
+# Load environment variables
+load_dotenv()
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+# Get Supabase credentials from environment
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     logger.error("Supabase URL or Key not found in environment variables")
