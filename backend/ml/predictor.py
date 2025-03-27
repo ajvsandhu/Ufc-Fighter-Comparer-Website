@@ -596,6 +596,7 @@ class FighterPredictor:
                     return None, None
                     
                 fighters = response.data
+                self.logger.info(f"Retrieved {len(fighters)} fighters for training")
             except Exception as e:
                 self.logger.error(f"Error fetching fighters: {str(e)}")
                 return None, None
@@ -625,8 +626,12 @@ class FighterPredictor:
                             skipped_count += 1
                             continue
                             
+                        self.logger.debug(f"Processing fighter: {fighter_name}")
+                        
                         # Get fighter's last 5 fights
                         fights = self._get_fighter_fights(fighter_name)
+                        self.logger.debug(f"Found {len(fights)} fights for {fighter_name}")
+                        
                         if not fights or len(fights) < 2:  # Need at least 2 fights for meaningful data
                             skipped_count += 1
                             continue
@@ -648,6 +653,8 @@ class FighterPredictor:
                             # Skip if fighter names are the same (data error)
                             if fighter1_name.lower() == fighter2_name.lower():
                                 continue
+                            
+                            self.logger.debug(f"Extracting features for matchup: {fighter1_name} vs {fighter2_name}")
                             
                             # Extract features for both fighters
                             fighter1_features = self._extract_features_from_fighter(fighter1_name)
@@ -704,6 +711,7 @@ class FighterPredictor:
                 # Make sure all feature vectors have the same length
                 if X:
                     max_length = max(len(x) for x in X)
+                    self.logger.info(f"Maximum feature vector length: {max_length}")
                     X = [x + [0] * (max_length - len(x)) for x in X]  # Pad with zeros if needed
                 
                 X = np.array(X)
@@ -1499,4 +1507,24 @@ class FighterPredictor:
             
         except Exception as e:
             logger.error(f"Error getting available fighters: {str(e)}")
+            return []
+
+    def _get_fighter_fights(self, fighter_name: str) -> List[Dict[str, Any]]:
+        """Get all fights for a fighter from the database."""
+        try:
+            supabase = self._get_db_connection()
+            if not supabase:
+                self.logger.error("No database connection available")
+                return []
+                
+            response = supabase.table("fighter_last_5_fights") \
+                .select("*") \
+                .eq("fighter_name", fighter_name) \
+                .order("id", desc=False) \
+                .execute()
+                
+            return response.data if response.data else []
+        except Exception as e:
+            self.logger.error(f"Error getting fights for {fighter_name}: {str(e)}")
+            self.logger.error(traceback.format_exc())
             return [] 
