@@ -1,0 +1,21 @@
+# Backend dependencies
+fastapi==0.109.0
+uvicorn==0.27.0
+pydantic==2.5.3
+python-multipart==0.0.6
+numpy>=1.24.4,<2.0.0
+
+# Data science dependencies
+pandas==2.2.0
+scikit-learn==1.2.2
+scipy>=1.15.2
+
+# Scraper dependencies
+requests==2.31.0
+beautifulsoup4==4.12.3
+
+# Common dependencies
+python-dotenv==1.0.0
+
+# Database dependencies
+supabase==2.3.4 
