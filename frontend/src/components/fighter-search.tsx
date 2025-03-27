@@ -148,9 +148,14 @@ export function FighterSearch({ onSelectFighter, clearSearch }: FighterSearchPro
                     key={fighter}
                     value={fighter}
                     onSelect={(currentValue: string) => {
-                      onSelectFighter(currentValue)
-                      setShowSuggestions(false)
-                      setSearchTerm("") // Clear search term after selection
+                      // Safety check to ensure we're not passing undefined/null to the parent
+                      if (currentValue && typeof currentValue === 'string') {
+                        onSelectFighter(currentValue);
+                      } else {
+                        console.error('Invalid fighter value:', currentValue);
+                      }
+                      setShowSuggestions(false);
+                      setSearchTerm(""); // Clear search term after selection
                     }}
                     className="cursor-pointer"
                   >

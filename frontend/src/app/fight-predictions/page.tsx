@@ -178,6 +178,9 @@ export default function FightPredictionsPage() {
   }
 
   const extractNumber = (str: string) => {
+    // Safety check for null or undefined
+    if (!str) return 0;
+    
     // Extract numbers from strings like "5' 7"" or "125 lbs."
     const match = str.match(/(\d+)/);
     return match ? Number(match[1]) : 0;
@@ -191,9 +194,13 @@ export default function FightPredictionsPage() {
     unit?: string;
     isPhysicalStat?: boolean;
   }) => {
+    // Safety check - ensure values are never undefined before using toString()
+    const safeValue1 = value1 !== undefined && value1 !== null ? value1 : '';
+    const safeValue2 = value2 !== undefined && value2 !== null ? value2 : '';
+    
     // Handle physical stats (height, weight, reach) differently
-    const num1 = isPhysicalStat ? extractNumber(value1.toString()) : (unit === '%' ? parseFloat(value1.toString()) : Number(value1));
-    const num2 = isPhysicalStat ? extractNumber(value2.toString()) : (unit === '%' ? parseFloat(value2.toString()) : Number(value2));
+    const num1 = isPhysicalStat ? extractNumber(String(safeValue1)) : (unit === '%' ? parseFloat(String(safeValue1)) : Number(safeValue1));
+    const num2 = isPhysicalStat ? extractNumber(String(safeValue2)) : (unit === '%' ? parseFloat(String(safeValue2)) : Number(safeValue2));
     
     // For stats where lower is better, invert the comparison
     const [compareVal1, compareVal2] = higherIsBetter ? [num1, num2] : [-num1, -num2];
@@ -201,8 +208,8 @@ export default function FightPredictionsPage() {
     const color2 = getComparisonColor(compareVal2, compareVal1);
 
     // Remove % from the value if unit is %
-    const displayValue1 = unit === '%' ? value1.toString().replace('%', '') : value1;
-    const displayValue2 = unit === '%' ? value2.toString().replace('%', '') : value2;
+    const displayValue1 = unit === '%' ? String(safeValue1).replace('%', '') : safeValue1;
+    const displayValue2 = unit === '%' ? String(safeValue2).replace('%', '') : safeValue2;
 
     return (
       <motion.div 
@@ -330,21 +337,21 @@ export default function FightPredictionsPage() {
                 {/* Fighter Names and Win Probabilities */}
                 <div className="grid grid-cols-[1fr,auto,1fr] gap-8 items-center">
                   <div className="text-center space-y-2">
-                    <h4 className="text-xl font-bold">{prediction.fighter1.name}</h4>
-                    <div className={`text-lg font-medium ${prediction.fighter1.name === prediction.winner ? 'text-green-500' : 'text-red-500'}`}>
-                      {prediction.fighter1.win_probability}
+                    <h4 className="text-xl font-bold">{prediction?.fighter1?.name || 'Fighter 1'}</h4>
+                    <div className={`text-lg font-medium ${prediction?.fighter1?.name === prediction?.winner ? 'text-green-500' : 'text-red-500'}`}>
+                      {prediction?.fighter1?.win_probability || '0%'}
                     </div>
-                    <p className="text-sm text-muted-foreground">{prediction.fighter1.record}</p>
+                    <p className="text-sm text-muted-foreground">{prediction?.fighter1?.record || '0-0-0'}</p>
                   </div>
                   <div className="flex flex-col items-center gap-2">
                     <div className="text-3xl font-bold text-primary">VS</div>
                   </div>
                   <div className="text-center space-y-2">
-                    <h4 className="text-xl font-bold">{prediction.fighter2.name}</h4>
-                    <div className={`text-lg font-medium ${prediction.fighter2.name === prediction.winner ? 'text-green-500' : 'text-red-500'}`}>
-                      {prediction.fighter2.win_probability}
+                    <h4 className="text-xl font-bold">{prediction?.fighter2?.name || 'Fighter 2'}</h4>
+                    <div className={`text-lg font-medium ${prediction?.fighter2?.name === prediction?.winner ? 'text-green-500' : 'text-red-500'}`}>
+                      {prediction?.fighter2?.win_probability || '0%'}
                     </div>
-                    <p className="text-sm text-muted-foreground">{prediction.fighter2.record}</p>
+                    <p className="text-sm text-muted-foreground">{prediction?.fighter2?.record || '0-0-0'}</p>
                   </div>
                 </div>
 
@@ -352,7 +359,7 @@ export default function FightPredictionsPage() {
                 <div className="relative">
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-accent/30 to-transparent" />
                   <div className="relative text-center py-4">
-                    <h4 className="text-xl font-bold">{prediction.winner}</h4>
+                    <h4 className="text-xl font-bold">{prediction?.winner || 'Undecided'}</h4>
                     <p className="text-primary">Predicted Winner</p>
                   </div>
                 </div>
@@ -361,22 +368,22 @@ export default function FightPredictionsPage() {
                 <div className="space-y-2">
                   <h5 className="text-lg font-semibold">Fight Analysis</h5>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    {prediction.analysis || "No detailed analysis available for this matchup."}
+                    {prediction?.analysis || "No detailed analysis available for this matchup."}
                   </p>
                 </div>
 
                 {/* Head to Head */}
-                {prediction.head_to_head && (prediction.head_to_head.fighter1_wins || prediction.head_to_head.fighter2_wins) && (
+                {prediction?.head_to_head && (prediction?.head_to_head?.fighter1_wins || prediction?.head_to_head?.fighter2_wins) && (
                   <div className="bg-accent/10 rounded-xl p-6">
                     <h4 className="font-semibold text-primary mb-4 text-center">Head to Head History</h4>
                     <div className="grid grid-cols-3 gap-4 text-sm">
-                      <div className="text-right font-medium">{prediction.head_to_head.fighter1_wins || 0} wins</div>
+                      <div className="text-right font-medium">{prediction?.head_to_head?.fighter1_wins || 0} wins</div>
                       <div className="text-center font-medium text-primary">Previous Fights</div>
-                      <div className="text-left font-medium">{prediction.head_to_head.fighter2_wins || 0} wins</div>
+                      <div className="text-left font-medium">{prediction?.head_to_head?.fighter2_wins || 0} wins</div>
                     </div>
-                    {prediction.head_to_head.last_winner && (
+                    {prediction?.head_to_head?.last_winner && (
                       <div className="text-sm text-muted-foreground text-center mt-4 pt-4 border-t border-border/50">
-                        Last fight: <span className="font-medium text-foreground">{prediction.head_to_head.last_winner}</span> won by <span className="font-medium text-foreground">{prediction.head_to_head.last_method}</span>
+                        Last fight: <span className="font-medium text-foreground">{prediction?.head_to_head?.last_winner}</span> won by <span className="font-medium text-foreground">{prediction?.head_to_head?.last_method || 'Decision'}</span>
                       </div>
                     )}
                   </div>
@@ -384,8 +391,8 @@ export default function FightPredictionsPage() {
 
                 {/* Model Info */}
                 <div className="flex justify-between items-center text-xs text-muted-foreground border-t border-border pt-4">
-                  <div>Model Version: {prediction.model?.version || prediction.model_version || "1.0"}</div>
-                  <div>Model Accuracy: {prediction.model?.accuracy || prediction.model_accuracy || "N/A"}</div>
+                  <div>Model Version: {prediction?.model?.version || prediction?.model_version || "1.0"}</div>
+                  <div>Model Accuracy: {prediction?.model?.accuracy || prediction?.model_accuracy || "N/A"}</div>
                 </div>
 
                 {/* Note */}
@@ -399,6 +406,26 @@ export default function FightPredictionsPage() {
       )}
     </AnimatePresence>
   );
+
+  // Check fighter data
+  const isValidData = (fighter: FighterStats | null): boolean => {
+    return fighter !== null && fighter !== undefined && typeof fighter.name === 'string' && fighter.name.trim() !== '';
+  }
+
+  // Called when the "Predict Fight Outcome" button is clicked
+  const handlePredictClick = () => {
+    if (!isValidData(fighter1) || !isValidData(fighter2)) {
+      toast({
+        title: 'Error',
+        description: 'Both fighters must be selected with valid data',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    // Safe non-null assertion since we just checked
+    getPrediction(fighter1!.name, fighter2!.name);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-background/80">
@@ -606,9 +633,7 @@ export default function FightPredictionsPage() {
                       className="pt-2 flex justify-center"
                     >
                       <Button
-                        onClick={() => {
-                          getPrediction(fighter1.name, fighter2.name);
-                        }}
+                        onClick={handlePredictClick}
                         className="w-full"
                       >
                         Predict Fight Outcome
