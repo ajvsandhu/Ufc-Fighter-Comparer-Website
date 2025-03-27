@@ -204,40 +204,88 @@ export default function FightPredictionsPage() {
 
   const ComparisonRow = ({ label, value1, value2, higherIsBetter = true, unit = '', isPhysicalStat = false }: { 
     label: string;
-    value1: string | number;
-    value2: string | number;
+    value1: any;
+    value2: any;
     higherIsBetter?: boolean;
     unit?: string;
     isPhysicalStat?: boolean;
   }) => {
-    // Safety check - ensure values are never undefined before using toString()
-    const safeValue1 = value1 !== undefined && value1 !== null ? value1 : '';
-    const safeValue2 = value2 !== undefined && value2 !== null ? value2 : '';
-    
-    // Handle physical stats (height, weight, reach) differently
-    const num1 = isPhysicalStat ? extractNumber(String(safeValue1)) : (unit === '%' ? parseFloat(String(safeValue1)) : Number(safeValue1));
-    const num2 = isPhysicalStat ? extractNumber(String(safeValue2)) : (unit === '%' ? parseFloat(String(safeValue2)) : Number(safeValue2));
-    
-    // For stats where lower is better, invert the comparison
-    const [compareVal1, compareVal2] = higherIsBetter ? [num1, num2] : [-num1, -num2];
-    const color1 = getComparisonColor(compareVal1, compareVal2);
-    const color2 = getComparisonColor(compareVal2, compareVal1);
-
-    // Remove % from the value if unit is %
-    const displayValue1 = unit === '%' ? String(safeValue1).replace('%', '') : safeValue1;
-    const displayValue2 = unit === '%' ? String(safeValue2).replace('%', '') : safeValue2;
-
-    return (
-      <motion.div 
-        initial={{ opacity: 0, y: 5 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="grid grid-cols-3 gap-2 py-1.5 items-center hover:bg-accent/5 rounded-lg transition-colors"
-      >
-        <div className={`text-right font-medium ${color1}`}>{displayValue1}</div>
-        <div className="text-center text-sm text-muted-foreground font-medium px-2">{label}</div>
-        <div className={`text-left font-medium ${color2}`}>{displayValue2}</div>
-      </motion.div>
-    )
+    try {
+      // Safety check - ensure values are never undefined before using toString()
+      const safeValue1 = value1 !== undefined && value1 !== null ? value1 : '';
+      const safeValue2 = value2 !== undefined && value2 !== null ? value2 : '';
+      
+      // Convert to strings for display
+      const strValue1 = String(safeValue1);
+      const strValue2 = String(safeValue2);
+      
+      // Parse numbers for comparison
+      let num1 = 0;
+      let num2 = 0;
+      
+      try {
+        if (isPhysicalStat) {
+          // Extract numbers from strings like "5' 7"" or "125 lbs."
+          const match1 = strValue1.match(/(\d+)/);
+          const match2 = strValue2.match(/(\d+)/);
+          num1 = match1 ? Number(match1[1]) : 0;
+          num2 = match2 ? Number(match2[1]) : 0;
+        } else if (unit === '%') {
+          // Handle percentage values
+          num1 = parseFloat(strValue1.replace('%', '')) || 0;
+          num2 = parseFloat(strValue2.replace('%', '')) || 0;
+        } else {
+          // Regular number conversion
+          num1 = Number(safeValue1) || 0;
+          num2 = Number(safeValue2) || 0;
+        }
+      } catch (e) {
+        console.error('Error parsing comparison values:', e);
+        // Default to 0 if parsing fails
+        num1 = 0;
+        num2 = 0;
+      }
+      
+      // For stats where lower is better, invert the comparison
+      const compareVal1 = higherIsBetter ? num1 : -num1;
+      const compareVal2 = higherIsBetter ? num2 : -num2;
+      
+      // Determine color based on comparison
+      let color1 = 'text-yellow-500';
+      let color2 = 'text-yellow-500';
+      
+      // Only use different colors if there's a significant difference
+      if (Math.abs(num1 - num2) > 0.1) {
+        color1 = compareVal1 > compareVal2 ? 'text-green-500' : 'text-red-500';
+        color2 = compareVal2 > compareVal1 ? 'text-green-500' : 'text-red-500';
+      }
+  
+      // Remove % from the value if unit is %
+      const displayValue1 = unit === '%' ? strValue1.replace('%', '') : strValue1;
+      const displayValue2 = unit === '%' ? strValue2.replace('%', '') : strValue2;
+  
+      return (
+        <motion.div 
+          initial={{ opacity: 0, y: 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="grid grid-cols-3 gap-2 py-1.5 items-center hover:bg-accent/5 rounded-lg transition-colors"
+        >
+          <div className={`text-right font-medium ${color1}`}>{displayValue1}</div>
+          <div className="text-center text-sm text-muted-foreground font-medium px-2">{label}</div>
+          <div className={`text-left font-medium ${color2}`}>{displayValue2}</div>
+        </motion.div>
+      );
+    } catch (error) {
+      // Fallback in case of any errors
+      console.error('Error rendering comparison row:', error);
+      return (
+        <motion.div className="grid grid-cols-3 gap-2 py-1.5 items-center">
+          <div className="text-right">-</div>
+          <div className="text-center text-sm text-muted-foreground">{label}</div>
+          <div className="text-left">-</div>
+        </motion.div>
+      );
+    }
   }
 
   const getPrediction = async (fighter1Name: string, fighter2Name: string) => {

@@ -135,6 +135,34 @@ export function FighterSearch({ onSelectFighter, clearSearch }: FighterSearchPro
     }
   }
 
+  // Fixed version of onSelect that consistently handles fighter names 
+  const handleFighterSelect = (currentValue: string) => {
+    // Safety check to ensure we're not passing undefined/null to the parent
+    if (!currentValue) {
+      console.error('Invalid fighter value:', currentValue);
+      return;
+    }
+    
+    try {
+      // Standardize the fighter name format
+      let cleanValue = String(currentValue).trim();
+      
+      // Pass the cleaned value to the parent
+      onSelectFighter(cleanValue);
+      
+      // Clear the search UI
+      setShowSuggestions(false);
+      setSearchTerm(""); // Clear search term after selection
+    } catch (err) {
+      console.error('Error processing fighter selection:', err);
+    }
+  };
+  
+  // Only display fighters that have valid string values
+  const validFighters = fighters.filter(fighter => 
+    fighter !== undefined && fighter !== null && typeof fighter === 'string'
+  );
+
   return (
     <div ref={wrapperRef} className="relative w-full">
       <div className="relative">
@@ -155,24 +183,15 @@ export function FighterSearch({ onSelectFighter, clearSearch }: FighterSearchPro
             )}
             {isLoading ? (
               <p className="p-2 text-sm text-muted-foreground">Loading...</p>
-            ) : fighters.length === 0 ? (
+            ) : validFighters.length === 0 ? (
               <CommandEmpty>No fighters found.</CommandEmpty>
             ) : (
               <CommandGroup>
-                {fighters.map((fighter) => (
+                {validFighters.map((fighter, index) => (
                   <CommandItem
-                    key={fighter}
+                    key={`${fighter}-${index}`}
                     value={fighter}
-                    onSelect={(currentValue: string) => {
-                      // Safety check to ensure we're not passing undefined/null to the parent
-                      if (currentValue && typeof currentValue === 'string') {
-                        onSelectFighter(currentValue);
-                      } else {
-                        console.error('Invalid fighter value:', currentValue);
-                      }
-                      setShowSuggestions(false);
-                      setSearchTerm(""); // Clear search term after selection
-                    }}
+                    onSelect={handleFighterSelect}
                     className="cursor-pointer"
                   >
                     <Check

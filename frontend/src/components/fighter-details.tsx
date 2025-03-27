@@ -197,7 +197,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
         const data = await response.json();
         
         // Sanitize the fighter data to prevent UI crashes
-        const sanitizedData = {
+        const sanitizedData: Record<string, any> = {
           name: data?.name || fighterName || '',
           image_url: data?.image_url || DEFAULT_PLACEHOLDER_IMAGE,
           record: data?.record || DEFAULT_VALUE,
@@ -228,7 +228,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
           }
         });
         
-        setStats(sanitizedData);
+        setStats(sanitizedData as FighterStats);
         setFightHistory(Array.isArray(data?.last_5_fights) ? data.last_5_fights : []);
       } catch (err) {
         console.error('Error fetching fighter:', err);
