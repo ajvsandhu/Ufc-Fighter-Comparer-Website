@@ -1,3 +1,7 @@
+"""
+UFC Fighter Data API machine learning modules.
+"""
+
 # ML package
 from backend.ml.model_loader import (
     get_loaded_model,
