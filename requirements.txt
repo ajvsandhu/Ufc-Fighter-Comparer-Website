@@ -27,6 +27,14 @@ bcrypt==4.0.1
 # File handling
 python-multipart==0.0.9
 
+# Web Scraping
+beautifulsoup4==4.12.2
+lxml==4.9.3
+html5lib==1.1
+selenium==4.15.2
+webdriver-manager==4.0.1
+aiohttp==3.9.1
+
 # Testing
 pytest==7.4.4
 pytest-asyncio==0.23.4 
