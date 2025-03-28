@@ -157,6 +157,27 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
   const [imageError, setImageError] = React.useState(false)
   const [expandedFight, setExpandedFight] = React.useState<number | null>(null)
 
+  // Create a global style to prevent content jumps on expansion
+  React.useEffect(() => {
+    // Add a class to the body when a fight is expanded to prevent content jumps
+    if (expandedFight !== null) {
+      document.body.style.overflowAnchor = 'none';
+      // Scroll the expanded card into view with smooth behavior
+      setTimeout(() => {
+        const expandedCard = document.querySelector(`[data-expanded="true"]`);
+        if (expandedCard) {
+          expandedCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 100);
+    } else {
+      document.body.style.overflowAnchor = 'auto';
+    }
+    
+    return () => {
+      document.body.style.overflowAnchor = 'auto';
+    };
+  }, [expandedFight]);
+
   // Fetch fighter data and fight history
   React.useEffect(() => {
     const fetchFighterData = async () => {
@@ -407,7 +428,11 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
               const fightResult = fight.result || "NC";
               
               return (
-                <Card key={`${displayName}-${fightDate}-${index}`} className="overflow-hidden">
+                <Card 
+                  key={`${displayName}-${fightDate}-${index}`} 
+                  className="overflow-hidden"
+                  data-expanded={expandedFight === index}
+                >
                   <CardContent className="p-0">
                     <div 
                       className={`p-4 cursor-pointer hover:bg-accent/10 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 ${
@@ -417,8 +442,8 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                     >
                       <div className="flex items-center gap-3">
                         <div className={`w-4 h-4 rounded-full ${
-                          fightResult.toLowerCase() === 'win' ? 'bg-green-500' : 
-                          fightResult.toLowerCase() === 'loss' || fightResult.toLowerCase() === 'dq' ? 'bg-red-500' : 
+                          fightResult.toLowerCase().includes('win') ? 'bg-green-500' : 
+                          fightResult.toLowerCase().includes('loss') || fightResult.toLowerCase().includes('dq') ? 'bg-red-500' : 
                           'bg-gray-500'
                         }`} />
                         <div>
@@ -444,7 +469,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                   
                   {/* Expanded fight stats */}
                   {expandedFight === index && (
-                    <div className="px-4 py-6 border-t border-border bg-accent/5">
+                    <div className="px-4 py-6 border-t border-border bg-accent/5 min-h-[200px]">
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                         {fight.kd && (
                           <div>
