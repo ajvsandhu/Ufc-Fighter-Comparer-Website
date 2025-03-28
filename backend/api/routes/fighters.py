@@ -345,26 +345,26 @@ def get_fighter(fighter_name: str):
             # Try to match using both original and clean name to maximize chances
             fights_response = supabase.table('fighter_last_5_fights')\
                 .select('*')\
-                .eq('fighter_name', clean_name)\
+                .eq('fighter_name', fighter_data['fighter_name'])\
                 .execute()
             
             if fights_response and hasattr(fights_response, 'data') and fights_response.data:
                 last_5_fights = fights_response.data
-                logger.info(f"Found {len(last_5_fights)} fights for fighter {clean_name}")
+                logger.info(f"Found {len(last_5_fights)} fights for fighter {fighter_data['fighter_name']}")
             else:
                 # Try a more general search using ilike
-                logger.warning(f"No exact matches found for fighter {clean_name}, trying case-insensitive search")
+                logger.warning(f"No exact matches found for fighter {fighter_data['fighter_name']}, trying case-insensitive search")
                 fights_response = supabase.table('fighter_last_5_fights')\
                     .select('*')\
-                    .ilike('fighter_name', f'%{clean_name}%')\
+                    .ilike('fighter_name', f'%{fighter_data["fighter_name"]}%')\
                     .limit(MAX_FIGHTS_DISPLAY)\
                     .execute()
                 
                 if fights_response and hasattr(fights_response, 'data') and fights_response.data:
                     last_5_fights = fights_response.data
-                    logger.info(f"Found {len(last_5_fights)} fights using ilike for fighter {clean_name}")
+                    logger.info(f"Found {len(last_5_fights)} fights using ilike for fighter {fighter_data['fighter_name']}")
                 else:
-                    logger.warning(f"No fights found for fighter {clean_name} even with ilike")
+                    logger.warning(f"No fights found for fighter {fighter_data['fighter_name']} even with ilike")
                     
                     # For testing and development, add synthetic fight history
                     # REMOVE THIS IN PRODUCTION
@@ -372,7 +372,7 @@ def get_fighter(fighter_name: str):
                     last_5_fights = [
                         {
                             "id": f"1{fighter_data['id']}" if 'id' in fighter_data else "100",
-                            "fighter_name": clean_name,
+                            "fighter_name": fighter_data['fighter_name'],
                             "fight_url": "http://example.com/fight1",
                             "kd": "1",
                             "sig_str": "45 of 97",
@@ -396,7 +396,7 @@ def get_fighter(fighter_name: str):
                         },
                         {
                             "id": f"2{fighter_data['id']}" if 'id' in fighter_data else "200",
-                            "fighter_name": clean_name,
+                            "fighter_name": fighter_data['fighter_name'],
                             "fight_url": "http://example.com/fight2",
                             "kd": "0",
                             "sig_str": "92 of 231",
@@ -420,7 +420,7 @@ def get_fighter(fighter_name: str):
                         },
                         {
                             "id": f"3{fighter_data['id']}" if 'id' in fighter_data else "300",
-                            "fighter_name": clean_name,
+                            "fighter_name": fighter_data['fighter_name'],
                             "fight_url": "http://example.com/fight3",
                             "kd": "1",
                             "sig_str": "99 of 176",
@@ -444,7 +444,7 @@ def get_fighter(fighter_name: str):
                         },
                         {
                             "id": f"4{fighter_data['id']}" if 'id' in fighter_data else "400",
-                            "fighter_name": clean_name,
+                            "fighter_name": fighter_data['fighter_name'],
                             "fight_url": "http://example.com/fight4",
                             "kd": "0",
                             "sig_str": "48 of 123",
@@ -468,7 +468,7 @@ def get_fighter(fighter_name: str):
                         },
                         {
                             "id": f"5{fighter_data['id']}" if 'id' in fighter_data else "500",
-                            "fighter_name": clean_name,
+                            "fighter_name": fighter_data['fighter_name'],
                             "fight_url": "http://example.com/fight5",
                             "kd": "1",
                             "sig_str": "57 of 132",

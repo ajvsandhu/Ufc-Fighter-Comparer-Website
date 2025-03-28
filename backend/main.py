@@ -11,6 +11,7 @@ import time
 from fastapi.exceptions import RequestValidationError
 from starlette.responses import RedirectResponse
 from typing import Callable
+from mangum import Mangum
 
 from backend.constants import (
     APP_TITLE, 
@@ -242,3 +243,6 @@ async def validation_exception_handler(request, exc):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=True)
+
+# AWS Lambda handler
+handler = Mangum(app)

@@ -389,7 +389,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
       <div className="space-y-8 py-4 animate-in slide-in-from-bottom duration-700">
         <h4 className="text-xl font-semibold">Last {fightHistory.length} Fights</h4>
         
-        {fightHistory.length === 0 ? (
+        {!fightHistory || fightHistory.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <p>No fight history available</p>
             <p className="text-sm mt-2">If you believe this fighter should have fight data, please check back later.</p>
@@ -401,9 +401,9 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
               if (!fight) return null;
               
               // Use database field names with fallbacks for display
-              const displayName = getStat(fight.opponent_display_name || fight.opponent || fight.opponent_name);
-              const fightDate = getStat(fight.fight_date || fight.date);
-              const fightResult = getStat(fight.result, 'NC');
+              const displayName = fight.opponent_display_name || fight.opponent || fight.opponent_name || "Unknown Opponent";
+              const fightDate = fight.fight_date || fight.date || "Unknown Date";
+              const fightResult = fight.result || "NC";
               
               return (
                 <Card key={`${displayName}-${fightDate}-${index}`} className="overflow-hidden">
@@ -428,7 +428,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                       <div className="flex items-center gap-6">
                         <div>
                           <p className="text-sm">Method</p>
-                          <p className="font-medium">{getStat(fight.method)}</p>
+                          <p className="font-medium">{fight.method || "N/A"}</p>
                         </div>
                         <div>
                           <p className="text-sm">Round</p>
@@ -436,7 +436,7 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                         </div>
                         <div>
                           <p className="text-sm">Time</p>
-                          <p className="font-medium">{getStat(fight.time)}</p>
+                          <p className="font-medium">{fight.time || "0:00"}</p>
                         </div>
                         <div>
                           <ChevronDown
@@ -456,25 +456,25 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                         {fight.kd && (
                           <div>
                             <p className="text-sm text-muted-foreground">Knockdowns</p>
-                            <p className="font-medium">{getStat(fight.kd)}</p>
+                            <p className="font-medium">{fight.kd}</p>
                           </div>
                         )}
                         {fight.sig_str && (
                           <div>
                             <p className="text-sm text-muted-foreground">Sig. Strikes</p>
-                            <p className="font-medium">{getStat(fight.sig_str)} {fight.sig_str_pct ? `(${getStat(fight.sig_str_pct)})` : ''}</p>
+                            <p className="font-medium">{fight.sig_str} {fight.sig_str_pct ? `(${fight.sig_str_pct})` : ''}</p>
                           </div>
                         )}
                         {fight.total_str && (
                           <div>
                             <p className="text-sm text-muted-foreground">Total Strikes</p>
-                            <p className="font-medium">{getStat(fight.total_str)}</p>
+                            <p className="font-medium">{fight.total_str}</p>
                           </div>
                         )}
                         {fight.takedowns && (
                           <div>
                             <p className="text-sm text-muted-foreground">Takedowns</p>
-                            <p className="font-medium">{getStat(fight.takedowns)} {fight.td_pct ? `(${getStat(fight.td_pct)})` : ''}</p>
+                            <p className="font-medium">{fight.takedowns} {fight.td_pct ? `(${fight.td_pct})` : ''}</p>
                           </div>
                         )}
                       </div>
@@ -485,19 +485,19 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                             {fight.head_str && (
                               <div>
                                 <p className="text-sm text-muted-foreground">Head</p>
-                                <p className="font-medium">{getStat(fight.head_str)}</p>
+                                <p className="font-medium">{fight.head_str}</p>
                               </div>
                             )}
                             {fight.body_str && (
                               <div>
                                 <p className="text-sm text-muted-foreground">Body</p>
-                                <p className="font-medium">{getStat(fight.body_str)}</p>
+                                <p className="font-medium">{fight.body_str}</p>
                               </div>
                             )}
                             {fight.leg_str && (
                               <div>
                                 <p className="text-sm text-muted-foreground">Leg</p>
-                                <p className="font-medium">{getStat(fight.leg_str)}</p>
+                                <p className="font-medium">{fight.leg_str}</p>
                               </div>
                             )}
                           </div>
@@ -506,12 +506,12 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                       {fight.ctrl && fight.ctrl !== '0:00' && (
                         <div className="mt-4 border-t border-border/50 pt-4">
                           <p className="text-sm text-muted-foreground">Control Time</p>
-                          <p className="font-medium">{getStat(fight.ctrl)}</p>
+                          <p className="font-medium">{fight.ctrl}</p>
                         </div>
                       )}
                       {fight.event && (
                         <div className="mt-4 border-t border-border/50 pt-4 text-sm text-muted-foreground">
-                          <p>{getStat(fight.event)}</p>
+                          <p>{fight.event}</p>
                         </div>
                       )}
                     </div>
