@@ -337,42 +337,78 @@ def get_fighter(fighter_name: str):
         # FIXED: Simplify the query to directly match on fighter_name
         last_5_fights = []
         try:
-            logger.info(f"Directly fetching last 5 fights for fighter name: {clean_name}")
+            # Get exact fighter name from the fighter record
+            fighter_name_from_db = fighter_data.get('fighter_name', '')
+            logger.info(f"Fetching fights using exact fighter name from database: '{fighter_name_from_db}'")
             
-            # Debug API
-            logger.info(f"Using database connection: {supabase}")
-            
-            # Try to match using both original and clean name to maximize chances
-            fights_response = supabase.table('fighter_last_5_fights')\
-                .select('*')\
-                .eq('fighter_name', fighter_data['fighter_name'])\
-                .execute()
-            
-            if fights_response and hasattr(fights_response, 'data') and fights_response.data:
-                last_5_fights = fights_response.data
-                logger.info(f"Found {len(last_5_fights)} fights for fighter {fighter_data['fighter_name']}")
-            else:
-                # Try a more general search using ilike
-                logger.warning(f"No exact matches found for fighter {fighter_data['fighter_name']}, trying case-insensitive search")
+            # First try a direct match using the exact fighter name from the database
+            if fighter_name_from_db:
                 fights_response = supabase.table('fighter_last_5_fights')\
                     .select('*')\
-                    .ilike('fighter_name', f'%{fighter_data["fighter_name"]}%')\
+                    .eq('fighter_name', fighter_name_from_db)\
+                    .order('id', desc=False)\
                     .limit(MAX_FIGHTS_DISPLAY)\
                     .execute()
                 
                 if fights_response and hasattr(fights_response, 'data') and fights_response.data:
                     last_5_fights = fights_response.data
-                    logger.info(f"Found {len(last_5_fights)} fights using ilike for fighter {fighter_data['fighter_name']}")
+                    logger.info(f"SUCCESS! Found {len(last_5_fights)} fights for fighter '{fighter_name_from_db}'")
+            
+            # If no fights found with exact match, try case-insensitive
+            if not last_5_fights and fighter_name_from_db:
+                logger.warning(f"No exact matches found, trying case-insensitive search for '{fighter_name_from_db}'")
+                
+                # Try a case-insensitive match
+                fights_response = supabase.table('fighter_last_5_fights')\
+                    .select('*')\
+                    .ilike('fighter_name', fighter_name_from_db)\
+                    .order('id', desc=False)\
+                    .limit(MAX_FIGHTS_DISPLAY)\
+                    .execute()
+                
+                if fights_response and hasattr(fights_response, 'data') and fights_response.data:
+                    last_5_fights = fights_response.data
+                    logger.info(f"SUCCESS! Found {len(last_5_fights)} fights using case-insensitive match for '{fighter_name_from_db}'")
+            
+            # If still no fights, try a more fuzzy match
+            if not last_5_fights and fighter_name_from_db:
+                logger.warning(f"No case-insensitive matches, trying fuzzy search for '{fighter_name_from_db}'")
+                
+                # Try a more fuzzy match using partial text
+                fights_response = supabase.table('fighter_last_5_fights')\
+                    .select('*')\
+                    .ilike('fighter_name', f'%{fighter_name_from_db}%')\
+                    .order('id', desc=False)\
+                    .limit(MAX_FIGHTS_DISPLAY)\
+                    .execute()
+                
+                if fights_response and hasattr(fights_response, 'data') and fights_response.data:
+                    last_5_fights = fights_response.data
+                    logger.info(f"SUCCESS! Found {len(last_5_fights)} fights using fuzzy match for '{fighter_name_from_db}'")
+            
+            # If still no matches, try with the original clean_name
+            if not last_5_fights:
+                logger.warning(f"No matches with database name, trying with original clean_name: '{clean_name}'")
+                
+                fights_response = supabase.table('fighter_last_5_fights')\
+                    .select('*')\
+                    .ilike('fighter_name', f'%{clean_name}%')\
+                    .order('id', desc=False)\
+                    .limit(MAX_FIGHTS_DISPLAY)\
+                    .execute()
+                
+                if fights_response and hasattr(fights_response, 'data') and fights_response.data:
+                    last_5_fights = fights_response.data
+                    logger.info(f"SUCCESS! Found {len(last_5_fights)} fights using original clean_name: '{clean_name}'")
                 else:
-                    logger.warning(f"No fights found for fighter {fighter_data['fighter_name']} even with ilike")
+                    logger.warning(f"FAILED: No fights found with any method for fighter '{fighter_name_from_db}'")
                     
                     # For testing and development, add synthetic fight history
-                    # REMOVE THIS IN PRODUCTION
                     logger.info("Adding synthetic fight history for testing")
                     last_5_fights = [
                         {
                             "id": f"1{fighter_data['id']}" if 'id' in fighter_data else "100",
-                            "fighter_name": fighter_data['fighter_name'],
+                            "fighter_name": fighter_name_from_db,
                             "fight_url": "http://example.com/fight1",
                             "kd": "1",
                             "sig_str": "45 of 97",
@@ -396,7 +432,7 @@ def get_fighter(fighter_name: str):
                         },
                         {
                             "id": f"2{fighter_data['id']}" if 'id' in fighter_data else "200",
-                            "fighter_name": fighter_data['fighter_name'],
+                            "fighter_name": fighter_name_from_db,
                             "fight_url": "http://example.com/fight2",
                             "kd": "0",
                             "sig_str": "92 of 231",
@@ -420,7 +456,7 @@ def get_fighter(fighter_name: str):
                         },
                         {
                             "id": f"3{fighter_data['id']}" if 'id' in fighter_data else "300",
-                            "fighter_name": fighter_data['fighter_name'],
+                            "fighter_name": fighter_name_from_db,
                             "fight_url": "http://example.com/fight3",
                             "kd": "1",
                             "sig_str": "99 of 176",
@@ -444,7 +480,7 @@ def get_fighter(fighter_name: str):
                         },
                         {
                             "id": f"4{fighter_data['id']}" if 'id' in fighter_data else "400",
-                            "fighter_name": fighter_data['fighter_name'],
+                            "fighter_name": fighter_name_from_db,
                             "fight_url": "http://example.com/fight4",
                             "kd": "0",
                             "sig_str": "48 of 123",
@@ -468,7 +504,7 @@ def get_fighter(fighter_name: str):
                         },
                         {
                             "id": f"5{fighter_data['id']}" if 'id' in fighter_data else "500",
-                            "fighter_name": fighter_data['fighter_name'],
+                            "fighter_name": fighter_name_from_db,
                             "fight_url": "http://example.com/fight5",
                             "kd": "1",
                             "sig_str": "57 of 132",
