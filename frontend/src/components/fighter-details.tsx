@@ -46,7 +46,7 @@ const safeReplacePercent = (value: string | undefined): string => {
 };
 
 // Type definitions
-type FightResult = 'win' | 'loss' | 'draw' | 'nc'
+type FightResult = 'win' | 'loss' | 'draw' | 'nc' | 'dq'
 
 interface FighterDetailsProps {
   fighterName: string
@@ -91,7 +91,8 @@ const RESULT_COLORS: Record<FightResult, string> = {
   win: 'text-green-500',
   loss: 'text-red-500',
   draw: 'text-yellow-500',
-  nc: 'text-gray-500'
+  nc: 'text-gray-500',
+  dq: 'text-gray-500'
 }
 
 // Modified calculateChartData function with proper type handling
@@ -417,8 +418,8 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                       <div className="flex items-center gap-3">
                         <div className={`w-4 h-4 rounded-full ${
                           fightResult.toLowerCase() === 'win' ? 'bg-green-500' : 
-                          fightResult.toLowerCase() === 'loss' ? 'bg-red-500' : 
-                          'bg-yellow-500'
+                          fightResult.toLowerCase() === 'loss' || fightResult.toLowerCase() === 'dq' ? 'bg-red-500' : 
+                          'bg-gray-500'
                         }`} />
                         <div>
                           <p className="font-medium">{displayName}</p>
@@ -429,14 +430,6 @@ export function FighterDetails({ fighterName }: FighterDetailsProps) {
                         <div>
                           <p className="text-sm">Method</p>
                           <p className="font-medium">{fight.method || "N/A"}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm">Round</p>
-                          <p className="font-medium">{fight.round || '--'}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm">Time</p>
-                          <p className="font-medium">{fight.time || "0:00"}</p>
                         </div>
                         <div>
                           <ChevronDown
